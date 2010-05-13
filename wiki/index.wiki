@@ -6,7 +6,7 @@ this project has been developed using c#. to open the project you need visual st
 
 = Algorithm in pseudocode =
 
-BuildShortestPathTree method:
+BuildShortestPathTree method
 
 Reset Graph State
 Start from endpoint vertex
@@ -31,7 +31,7 @@ Loop
 End Loop
 
 
-BuildSidetracksHeap method:
+BuildSidetracksHeap method
 
 Create a heap (queue) to store sidetracks for each path (weight is the sum of deltas of sidetracks) *
 Store in queue an empty sidetrack list, representing the shortest path
