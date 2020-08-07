@@ -3,3 +3,10 @@ D:\Projects\eppStein\Eppstein2\Eppstein2\Eppstein2\bin\Debug\Eppstein2.pdb
 D:\Projects\eppStein\Eppstein2\Eppstein2\Eppstein2\obj\Debug\ResolveAssemblyReference.cache
 D:\Projects\eppStein\Eppstein2\Eppstein2\Eppstein2\obj\Debug\Eppstein2.exe
 D:\Projects\eppStein\Eppstein2\Eppstein2\Eppstein2\obj\Debug\Eppstein2.pdb
+D:\Projects\eppstein48\Eppstein2\bin\Debug\Eppstein2.exe.config
+D:\Projects\eppstein48\Eppstein2\bin\Debug\Eppstein2.exe
+D:\Projects\eppstein48\Eppstein2\bin\Debug\Eppstein2.pdb
+D:\Projects\eppstein48\Eppstein2\obj\Debug\Eppstein2.csprojAssemblyReference.cache
+D:\Projects\eppstein48\Eppstein2\obj\Debug\Eppstein2.csproj.CoreCompileInputs.cache
+D:\Projects\eppstein48\Eppstein2\obj\Debug\Eppstein2.exe
+D:\Projects\eppstein48\Eppstein2\obj\Debug\Eppstein2.pdb
