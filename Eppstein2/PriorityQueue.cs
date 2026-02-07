@@ -3,46 +3,47 @@ using System.Text;
 namespace System.Collections.Generic
 {
     /// <summary>
-    /// Generic class for priority queue, it is based on a limited sorted array
+    /// Generic binary min-heap priority queue
     /// </summary>
     /// <typeparam name="TObj">Type of data object, must implement IComparable interface</typeparam>
-    /// <remarks>Lower weights in queue has higher priority</remarks>
+    /// <remarks>Lower weights in queue has higher priority.
+    /// Enqueue and Dequeue are O(log n); Root (peek) is O(1).</remarks>
     class PriorityQueue<TObj>
     {
         /// <summary>
-        /// Sorted list of objects, acts like a binary tree
+        /// Array-backed binary min-heap
         /// </summary>
-        private List<TObj> Queue = null;
+        private List<TObj> Heap;
 
         /// <summary>
         /// Returns count of elements in queue
         /// </summary>
         public int Count
         {
-            get { return Queue.Count; }
+            get { return Heap.Count; }
         }
 
         /// <summary>
         /// Public constructor
         /// </summary>
-        /// <param name="_queueSize">Maximum size of queue</param>
+        /// <param name="_queueSize">Initial capacity hint</param>
         /// <exception cref="System.Exception">Throws when TObj does not implement IComparable interface</exception>
         public PriorityQueue(int _queueSize)
         {
             if (typeof(TObj).GetInterface("IComparable") == null)
                 throw new Exception("PriorityQueue: Templated class " + typeof(TObj) + " does not implement IComparable.");
-            
-            Queue = new List<TObj>(_queueSize);
+
+            Heap = new List<TObj>(_queueSize);
         }
 
         public override string ToString()
         {
             StringBuilder result = new StringBuilder();
-            for (int i = this.Count-1; i >= 0; i--)
+            for (int i = this.Count - 1; i >= 0; i--)
             {
-                if (i < this.Count-1)
+                if (i < this.Count - 1)
                     result.Append(',');
-                result.Append(Queue[i]);
+                result.Append(Heap[i]);
             }
             return result.ToString();
         }
@@ -52,10 +53,11 @@ namespace System.Collections.Generic
         /// </summary>
         public void Clear()
         {
-            Queue.Clear();
+            Heap.Clear();
         }
+
         /// <summary>
-        /// Inserts an element in the queue, in the proper position according with weight
+        /// Inserts an element into the heap — O(log n)
         /// </summary>
         /// <param name="_obj">Object to enqueue, ignores if it is null</param>
         public void Enqueue(TObj _obj)
@@ -63,51 +65,99 @@ namespace System.Collections.Generic
             if (_obj == null)
                 return;
 
-            if (Queue.Count == 0) // Fast special case for empty queue
-            {
-                Queue.Add(_obj);
-                return;
-            }
-
-            // BinarySearch for element or best position
-            int posNew = Queue.BinarySearch(_obj);
-
-            // Inserts element in proper sorted position
-            if (posNew >= 0)   // Similar element exists on queue, inserts new before
-                Queue.Insert(posNew, _obj);
-            else
-            {
-                posNew = ~posNew;  // Binary invertion, as specified in BinarySearch() method help
-                if (posNew == Queue.Count)
-                    Queue.Add(_obj);
-                else
-                    Queue.Insert(posNew, _obj);
-            }
+            // Add to end of heap, then sift up
+            Heap.Add(_obj);
+            SiftUp(Heap.Count - 1);
         }
+
         /// <summary>
-        /// Extracts element from start of the queue
+        /// Extracts the minimum element from the heap — O(log n)
         /// </summary>
         /// <returns>Reference to enqueued object, null if queue is empty</returns>
         public TObj Dequeue()
         {
-            if (Queue.Count == 0)
+            if (Heap.Count == 0)
                 return default(TObj);
 
-            TObj _obj = Queue[0];
-            Queue.RemoveAt(0);
+            TObj min = Heap[0];
+            int last = Heap.Count - 1;
 
-            return _obj;
+            if (last == 0)
+            {
+                Heap.RemoveAt(0);
+                return min;
+            }
+
+            // Move last element to root and sift down
+            Heap[0] = Heap[last];
+            Heap.RemoveAt(last);
+            SiftDown(0);
+
+            return min;
         }
+
         /// <summary>
-        /// Returns a reference to element from start of queue, without removing it
+        /// Returns a reference to the minimum element without removing it — O(1)
         /// </summary>
         /// <returns>Reference to enqueued object, null if queue is empty</returns>
         public TObj Root()
         {
-            if (Queue.Count == 0)
+            if (Heap.Count == 0)
                 return default(TObj);
 
-            return Queue[0];
+            return Heap[0];
+        }
+
+        /// <summary>
+        /// Restores heap property by moving an element up toward the root
+        /// </summary>
+        private void SiftUp(int index)
+        {
+            TObj item = Heap[index];
+            IComparable comparable = (IComparable)item;
+
+            while (index > 0)
+            {
+                int parent = (index - 1) >> 1;
+                if (comparable.CompareTo(Heap[parent]) >= 0)
+                    break;
+
+                Heap[index] = Heap[parent];
+                index = parent;
+            }
+
+            Heap[index] = item;
+        }
+
+        /// <summary>
+        /// Restores heap property by moving an element down from the root
+        /// </summary>
+        private void SiftDown(int index)
+        {
+            int count = Heap.Count;
+            TObj item = Heap[index];
+            IComparable comparable = (IComparable)item;
+
+            while (true)
+            {
+                int left = (index << 1) + 1;
+                if (left >= count)
+                    break;
+
+                int right = left + 1;
+                int smallest = left;
+
+                if (right < count && ((IComparable)Heap[left]).CompareTo(Heap[right]) > 0)
+                    smallest = right;
+
+                if (comparable.CompareTo(Heap[smallest]) <= 0)
+                    break;
+
+                Heap[index] = Heap[smallest];
+                index = smallest;
+            }
+
+            Heap[index] = item;
         }
     }
 }
