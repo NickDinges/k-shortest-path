@@ -43,6 +43,9 @@ namespace Eppstein
 
 //            g.EdgeGroupWeights("beta", -1);
 
+            // Optional arc-flags speed-up (results are identical, preprocessing is done lazily)
+//            g.EnableArcFlags("S,A,B,C;D,E,F;G,H,I,J,K,T");  // or: g.EnableArcFlags(3);
+
             Console.WriteLine("EPPSTEIN ALGORITHM TEST");
 
             System.Diagnostics.Stopwatch stp = new System.Diagnostics.Stopwatch();

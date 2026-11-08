@@ -46,6 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Graph.cs" />
+    <Compile Include="Graph.ArcFlags.cs" />
     <Compile Include="GraphElements.cs" />
     <Compile Include="PriorityQueue.cs" />
     <Compile Include="Program.cs" />

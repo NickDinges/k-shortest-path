@@ -31,6 +31,10 @@ namespace Eppstein
         /// Collection of out edges not part of shortest path
         /// </summary>
         public List<Edge> RelatedEdges = new List<Edge>();
+        /// <summary>
+        /// Region of vertex for arc-flags optimization, -1 if not assigned
+        /// </summary>
+        public int Region = -1;
         #endregion
 
         #region Properties
@@ -108,6 +112,11 @@ namespace Eppstein
         /// Group label of edge
         /// </summary>
         public readonly string Group;
+        /// <summary>
+        /// Arc flags: ArcFlags[r] is true if this arc lies on a shortest path from its tail
+        /// to some vertex of region r. Null if arc flags have not been computed.
+        /// </summary>
+        internal bool[] ArcFlags = null;
 
         #region Properties
         /// <summary>
@@ -134,6 +143,17 @@ namespace Eppstein
             Head = _head;
             Weight = _weight;
             Group = _group;
+        }
+        /// <summary>
+        /// Tells if the arc may be part of a shortest path towards specified region
+        /// </summary>
+        /// <param name="_region">Region index, negative values disable the check</param>
+        /// <returns>True if flag is set or no flags are available (conservative)</returns>
+        public bool HasArcFlag(int _region)
+        {
+            if (_region < 0 || this.ArcFlags == null || _region >= this.ArcFlags.Length)
+                return true;
+            return this.ArcFlags[_region];
         }
         /// <summary>
         /// Tells if the edge is a possible sidetrack of specified vertex

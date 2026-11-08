@@ -102,7 +102,7 @@ namespace Eppstein
     /// <summary>
     /// Contains a directed graph, composed by vertices and directed edges collections
     /// </summary>
-    public class Graph
+    public partial class Graph
     {
         #region Private fields
         /// <summary>
@@ -148,6 +148,7 @@ namespace Eppstein
             // Scans vertices' string, creates objects, and add to vertices' list
             Ready = false;  // must rebuild trees
             Vertices.Clear();  // Remove all previous vertices
+            ResetArcFlags();   // Partition refers to removed vertices
 
             string[] vertexList = _vertices.ToUpper().Split(new char[] { ',' });
             foreach (string _label in vertexList)
@@ -196,6 +197,7 @@ namespace Eppstein
                     heads[i].RelatedEdges.Add(e);
             }
             Ready = false;
+            InvalidateArcFlags();  // New arcs need flags
 
             return true;
         }
@@ -214,6 +216,7 @@ namespace Eppstein
                         _e.Weight = _weight;
 
             this.Ready = false;
+            InvalidateArcFlags();  // Shortest paths may have changed
         }
         /// <summary>
         /// Calculates all shortest paths between s and t and returns the first one
@@ -230,6 +233,9 @@ namespace Eppstein
             this.EndVertex = this.GetVertex(_t.ToUpper());
             if (SourceVertex == null || EndVertex == null)
                 return new Path(); // Invalid path
+
+            // Recomputes arc flags lazily if enabled and graph changed since last preprocessing
+            EnsureArcFlags();
 
             // Builds shortest path tree for all vertices to t, according to Dijkstra,
             // storing distance to endpoint information on vertices, as described in Eppstein
@@ -326,13 +332,16 @@ namespace Eppstein
 
             // Creates a fringe (queue) for storing edge pending to be processed
             PriorityQueue<SP_Node> fringe = new PriorityQueue<SP_Node>(this.Vertices.Count);
+            // Region of endpoint for arc-flag pruning (-1 = no pruning)
+            int targetRegion = ArcFlagsRegionOf(this.EndVertex);
 
             // Main loop
             do
             {
                 if (v!=null)
                     foreach (Edge _e in v.RelatedEdges) // Evaluate all incoming edges
-                        if (_e.Head==v && _e.Weight>=0)  // Ignore negative edges
+                        if (_e.Head==v && _e.Weight>=0  // Ignore negative edges
+                            && _e.HasArcFlag(targetRegion))  // Arc flags: skip arcs not on any shortest path into t's region
                             fringe.Enqueue(new SP_Node(_e, _e.Weight + _e.Head.Distance));
 
                 SP_Node node = fringe.Dequeue();  // Extracts next element in queue
