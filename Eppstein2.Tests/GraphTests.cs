@@ -175,5 +175,46 @@ namespace Eppstein2.Tests
             g.DisableArcFlags();
             Assert.Equal(0, g.ArcFlagsRegionCount);
         }
+
+        [Fact]
+        public void Serialize_WritesAllVerticesAndEdges()
+        {
+            Graph g = EppsteinExample();
+            string dot = g.Serialize();
+            Assert.StartsWith("digraph Eppstein {", dot);
+            Assert.EndsWith("}", dot.TrimEnd());
+            foreach (string v in "S,A,B,C,D,E,F,G,H,I,J,K,T".Split(','))
+                Assert.Contains("\"" + v + "\" [", dot);
+            Assert.Equal(21, dot.Split('\n').Count(l => l.Contains(" -> ")));
+            Assert.Contains("\"C\" -> \"C\" [label=\"16\", tooltip=\"group BETA\"]", dot);
+            Assert.DoesNotContain("doublecircle", dot);  // No query yet
+        }
+
+        [Fact]
+        public void Serialize_HighlightsPathsAndQueryState()
+        {
+            Graph g = EppsteinExample();
+            List<Path> paths = Take(g, "S", "T", 2);
+            string dot = g.Serialize(paths);
+            Assert.Contains("\"S\" [label=\"S\\n55\", shape=doublecircle", dot);
+            Assert.Contains("\"S\" -> \"D\" [label=\"13\", tooltip=\"group ALPHA\", color=\"red\"", dot);
+            Assert.Contains("\"S\" -> \"A\" [label=\"2\", tooltip=\"group ALPHA\", color=\"blue\"", dot);
+            Assert.Contains("style=\"bold\"", dot);  // Shortest path tree
+            Assert.Equal(g.Serialize(paths[0]), g.Serialize(new[] { paths[0] }));
+        }
+
+        [Fact]
+        public void Serialize_NegativeEdgesDashed_AndRegionsAsClusters()
+        {
+            Graph g = EppsteinExample();
+            g.EdgeGroupWeights("beta", -1);
+            Assert.True(g.EnableArcFlags("S,A,B,C;D,E,F"));
+            g.PrecomputeArcFlags();
+            string dot = g.Serialize();
+            Assert.Contains("\"J\" -> \"K\" [label=\"-1\", tooltip=\"group BETA\", style=\"dashed\"]", dot);
+            Assert.Contains("subgraph cluster_0 {", dot);
+            Assert.Contains("subgraph cluster_2 {", dot);  // Unlisted vertices
+            Assert.Throws<ArgumentNullException>(() => g.Serialize(null, null));
+        }
     }
 }

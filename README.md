@@ -13,6 +13,24 @@ dotnet run --project Eppstein2 -- 20   # print the 20 shortest paths of the exam
 dotnet test Eppstein2.sln
 ```
 
+## Graphviz output
+
+`Graph.Serialize()` returns the graph in Graphviz DOT format (edge labels = weights, negative
+edges dashed). After a query, `s` and `t` are double circles, vertices show their distance to `t`
+and shortest path tree edges are bold; computed arc-flag regions are drawn as clusters.
+
+```csharp
+string dot = g.Serialize();                    // plain graph
+dot = g.Serialize(path);                       // one path highlighted
+dot = g.Serialize(new List<Path> { p1, p2 });  // several paths, one color each
+g.Serialize(writer, paths);                    // write to any TextWriter
+```
+
+```sh
+dotnet run --project Eppstein2 -- 5 --dot graph.dot   # first 3 paths highlighted
+dot -Tsvg graph.dot -o graph.svg
+```
+
 ## Paths with cycles
 
 As in Eppstein's formulation, paths may repeat vertices and edges. The heap of candidate paths is
