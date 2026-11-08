@@ -240,8 +240,9 @@ namespace Eppstein
             // Builds shortest path tree for all vertices to t, according to Dijkstra,
             // storing distance to endpoint information on vertices, as described in Eppstein
             BuildShortestPathTree();
-            // Fills a heap with all possible tracks from s to t, as described in Eppstein
-            // Paths are defined uniquely by sidetrack collections (edges not in shortest paths) 
+            // Initializes the heap of tracks from s to t, as described in Eppstein
+            // Paths are defined uniquely by sidetrack collections (edges not in shortest paths)
+            // The heap is expanded lazily, each time a path is extracted
             BuildSidetracksHeap();
             // Flag to indicate that shortest paths have been calculated
             Ready = true;
@@ -249,9 +250,11 @@ namespace Eppstein
             return FindNextShortestPath();
         }
         /// <summary>
-        /// Recover next pre-calculated shortest path
+        /// Recover next shortest path
         /// </summary>
         /// <returns>Directional path if available, empty path if not remaining paths</returns>
+        /// <remarks>Paths may repeat vertices and edges (as in Eppstein), so a graph with a cycle
+        /// reachable between s and t has infinitely many paths: limit the number of calls</remarks>
         public Path FindNextShortestPath()
         {
             if (!Ready)
@@ -261,6 +264,9 @@ namespace Eppstein
             ST_Node node = this.PathsHeap.Dequeue();
             if (node == null)
                 return new Path(); // Invalid path
+
+            // Lazy expansion: enqueues all tracks having this one as prefix plus one sidetrack
+            AddSidetracks(node.Sidetracks);
 
             // Returns path reconstructed from sidetracks
             return RebuildPath(node.Sidetracks);
@@ -360,38 +366,42 @@ namespace Eppstein
             } while (true);
         }
         /// <summary>
-        /// Creates all posible paths by describing only the sidetracks for each path
+        /// Initializes the heap of tracks with the shortest path (empty sidetrack collection)
         /// </summary>
-        /// <returns></returns>
         private void BuildSidetracksHeap()
         {
             this.PathsHeap = new PriorityQueue<ST_Node>(Vertices.Count);
-            Path empty = new Path();
-            this.PathsHeap.Enqueue(new ST_Node(empty));
-            AddSidetracks(empty, this.SourceVertex);
+            this.PathsHeap.Enqueue(new ST_Node(new Path()));
         }
         /// <summary>
-        /// Adds sidetracks recursively for specified vertex and new vertices in shortest path
+        /// Enqueues all children of a track: the same sidetracks plus one more sidetrack, taken from
+        /// a vertex of the shortest path tree between the head of the last sidetrack (or s) and t
         /// </summary>
-        /// <param name="_p">Previous sidetrack collection</param>
-        /// <param name="_v">Vertex to evalueate</param>
-        private void AddSidetracks(Path _p, Vertex _v)
+        /// <param name="_p">Sidetrack collection of an extracted track</param>
+        /// <remarks>
+        /// Every sidetrack collection has a unique parent (itself without its last sidetrack), so each
+        /// path is generated exactly once. Deltas are non-negative, so children never are shorter than
+        /// their parent and extraction order stays correct. Iterative and lazy: works with cycles.
+        /// </remarks>
+        private void AddSidetracks(Path _p)
         {
-            foreach (Edge _e in _v.RelatedEdges)
-            {
-                if (_e.IsSidetrackOf(_v) && (_e.Head.EdgeToPath != null || _e.Head == this.EndVertex))
-                {
-                    Path p = new Path();
-                    p.AddRange(_p);
-                    p.Add(_e);
-                    this.PathsHeap.Enqueue(new ST_Node(p));
+            Vertex v = _p.Count == 0 ? this.SourceVertex : _p[_p.Count - 1].Head;
 
-                    if (_e.Head != _v)  // This avoids infinite cycling
-                        AddSidetracks(p, _e.Head);
+            // Walks shortest path tree from v to t (tree paths are simple, so this terminates)
+            while (v != null)
+            {
+                foreach (Edge _e in v.RelatedEdges)
+                {
+                    if (_e.IsSidetrackOf(v) && (_e.Head.EdgeToPath != null || _e.Head == this.EndVertex))
+                    {
+                        Path p = new Path();
+                        p.AddRange(_p);
+                        p.Add(_e);
+                        this.PathsHeap.Enqueue(new ST_Node(p));
+                    }
                 }
+                v = v.Next;
             }
-            if (_v.Next != null)
-                AddSidetracks(_p, _v.Next);
         }
         /// <summary>
         /// Reconstructs path from sidetracks

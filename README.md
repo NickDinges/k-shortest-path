@@ -5,6 +5,22 @@ This paper presents an algorithm that finds multiple short paths connecting two 
 
 The k shortest paths problem has many important applications for finding alternative solutions to geographic path planning problems, network routing, hypothesis generation in computational linguistics, and sequence alignment and metabolic pathway finding in bioinformatics. Although there have been many papers on the k shortest paths problem before and after this one, it has become frequently cited in those application areas. Additionally, it marks a boundary in the theoretical study of the problem: prior theoretical work largely concerned how quickly the problem could be solved, a line of research that was closed off by the optimal time bounds of this paper. Subsequent work has focused instead on devising efficient algorithms for more complex alternative formulations of the problem that avoid the repeated vertices and other shortcomings of the alternative paths produced by this formulation.
 
+## Build and run (.NET 8, Linux / macOS / Windows)
+
+```sh
+dotnet build Eppstein2.sln
+dotnet run --project Eppstein2 -- 20   # print the 20 shortest paths of the example graph
+dotnet test Eppstein2.sln
+```
+
+## Paths with cycles
+
+As in Eppstein's formulation, paths may repeat vertices and edges. The heap of candidate paths is
+expanded lazily: each call of `FindNextShortestPath` extracts the next path and only then enqueues
+its successors (the same sidetracks plus one more). This works on graphs with cycles, but such a
+graph can have infinitely many s-t paths, so callers must limit the number of paths they request
+instead of looping until an empty path is returned.
+
 ## Arc-flags optimization (optional)
 
 The shortest path tree computation (backward Dijkstra from `t`) can be accelerated with
