@@ -10,6 +10,8 @@ Find the **shortest route** between two points in a network, then the **second s
 *The example graph from Eppstein's paper. The three shortest routes from S to T are drawn in red,
 blue and green. The number under each letter is the distance from that point to T.*
 
+> **Go version:** a Go port with the same API lives in [`go/`](go/README.md).
+
 **Contents**
 
 1. [What problem does this solve?](#1-what-problem-does-this-solve)
@@ -364,6 +366,7 @@ You don't need this to use the library, but here's the intuition.
 | `Eppstein2/Program.cs` | Demo program (`dotnet run --project Eppstein2 -- [k] [--dot file]`) |
 | `Eppstein2.Tests/` | Automated tests (xUnit) |
 | `docs/` | Images used in this README |
+| `go/` | Go port of the library ([own README](go/README.md)) |
 
 ```sh
 dotnet build Eppstein2.sln   # compile
