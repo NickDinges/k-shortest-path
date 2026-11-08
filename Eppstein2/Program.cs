@@ -12,15 +12,25 @@ namespace Eppstein
         /// <summary>
         /// Entry point
         /// </summary>
-        /// <param name="args">optional: maximum number of paths to print (default 20)</param>
+        /// <param name="args">optional: [k] [--dot file]
+        /// k = maximum number of paths to print (default 20),
+        /// file = Graphviz output with the first (up to 3) paths highlighted</param>
         static void Main(string[] args)
         {
             // Paths may repeat vertices (cycle C->C below), so there are infinitely many: limit them
             int k = 20;
-            if (args.Length > 0 && (!int.TryParse(args[0], out k) || k < 1))
+            string dotFile = null;
+            for (int a = 0; a < args.Length; a++)
             {
-                Console.WriteLine("Usage: Eppstein2 [k]   (k = number of paths, default 20)");
-                return;
+                if (args[a] == "--dot" && a + 1 < args.Length)
+                    dotFile = args[++a];
+                else if (!int.TryParse(args[a], out k) || k < 1)
+                {
+                    Console.WriteLine("Usage: Eppstein2 [k] [--dot file]");
+                    Console.WriteLine("  k     number of paths to print (default 20)");
+                    Console.WriteLine("  file  Graphviz DOT output, render with: dot -Tsvg file -o graph.svg");
+                    return;
+                }
             }
 
             Graph g = new Graph();
@@ -65,10 +75,18 @@ namespace Eppstein
             Console.WriteLine("Calculation time: " + stp.ElapsedMilliseconds + " ms");
             Console.ResetColor();
 
+            List<Path> found = new List<Path>();
             for (int i = 0; i < k && p.IsValid; i++)
             {
                 Console.WriteLine(p.VertexNames + " (" + p.Weight + ")");
+                found.Add(p);
                 p = g.FindNextShortestPath();
+            }
+
+            if (dotFile != null)
+            {
+                System.IO.File.WriteAllText(dotFile, g.Serialize(found.GetRange(0, Math.Min(3, found.Count))));
+                Console.WriteLine("Graphviz output written to " + dotFile);
             }
 
             Console.WriteLine("End.");
