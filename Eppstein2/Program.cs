@@ -12,9 +12,17 @@ namespace Eppstein
         /// <summary>
         /// Entry point
         /// </summary>
-        /// <param name="args">arguments list, not used</param>
+        /// <param name="args">optional: maximum number of paths to print (default 20)</param>
         static void Main(string[] args)
         {
+            // Paths may repeat vertices (cycle C->C below), so there are infinitely many: limit them
+            int k = 20;
+            if (args.Length > 0 && (!int.TryParse(args[0], out k) || k < 1))
+            {
+                Console.WriteLine("Usage: Eppstein2 [k]   (k = number of paths, default 20)");
+                return;
+            }
+
             Graph g = new Graph();
 
             g.CreateVertices("S,A,B,C,D,E,F,G,H,I,J,K,T");
@@ -43,6 +51,9 @@ namespace Eppstein
 
 //            g.EdgeGroupWeights("beta", -1);
 
+            // Optional arc-flags speed-up (results are identical, preprocessing is done lazily)
+//            g.EnableArcFlags("S,A,B,C;D,E,F;G,H,I,J,K,T");  // or: g.EnableArcFlags(3);
+
             Console.WriteLine("EPPSTEIN ALGORITHM TEST");
 
             System.Diagnostics.Stopwatch stp = new System.Diagnostics.Stopwatch();
@@ -54,14 +65,15 @@ namespace Eppstein
             Console.WriteLine("Calculation time: " + stp.ElapsedMilliseconds + " ms");
             Console.ResetColor();
 
-            while (p.IsValid)  // This can be replaced by something like: while (p!=null)
+            for (int i = 0; i < k && p.IsValid; i++)
             {
                 Console.WriteLine(p.VertexNames + " (" + p.Weight + ")");
                 p = g.FindNextShortestPath();
             }
 
             Console.WriteLine("End.");
-            Console.ReadKey();
+            if (!Console.IsInputRedirected)
+                Console.ReadKey();
         }
     }
 }
