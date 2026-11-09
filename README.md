@@ -48,12 +48,15 @@ that each additional route comes out almost immediately.
 
 ## 2. Quick start
 
-**You need:** the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0). It runs on
+**You need:** the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). It runs on
 Linux, macOS and Windows. Check that it is installed:
 
 ```sh
-dotnet --version     # should print 8.x.x or newer
+dotnet --version     # should print 10.x.x or newer
 ```
+
+The library itself runs on .NET 8 and .NET 10. The tests run on both, so `dotnet test` also needs
+the [.NET 8 runtime](https://dotnet.microsoft.com/download/dotnet/8.0).
 
 **Get the code and run the demo:**
 
@@ -240,6 +243,11 @@ a 2 3 5
 Both imports keep what is already in the graph. A broken line throws a `FormatException` whose
 message starts with the line number (`Line 7: invalid weight 'x'`); the lines before it stay
 imported.
+
+The DIMACS problem line creates all announced vertices at once. To protect against broken files,
+at most 100 million vertices are accepted (`Graph.DefaultMaxImportVertices`; the largest DIMACS
+road network, USA, has about 24 million). For bigger graphs pass your own limit:
+`g.ImportDimacs(file, 300_000_000)`.
 
 ### Asking for paths
 

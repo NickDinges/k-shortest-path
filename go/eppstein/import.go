@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -65,8 +66,24 @@ func (g *Graph) ImportEdges(r io.Reader) (int, error) {
 // "V" + n (e.g. V1). Existing vertices and edges are kept.
 //
 // It returns the number of edges added. On an invalid line it returns an error naming the
-// line number; the edges of the lines before it stay in the graph.
+// line number; the edges of the lines before it stay in the graph. A file that declares more
+// than DefaultMaxImportVertices vertices is rejected; see ImportDimacsLimit.
 func (g *Graph) ImportDimacs(r io.Reader) (int, error) {
+	return g.ImportDimacsLimit(r, DefaultMaxImportVertices)
+}
+
+// DefaultMaxImportVertices is the default upper limit for the number of vertices a DIMACS file
+// may declare (100 million; the largest DIMACS road network, USA, has about 24 million). The
+// problem line creates all declared vertices at once, so without a limit a few bytes of a broken
+// or hostile file could make the import allocate all memory.
+const DefaultMaxImportVertices = 100_000_000
+
+// ImportDimacsLimit is ImportDimacs with an own limit for the number of vertices the file may
+// declare. It panics if maxVertices is negative.
+func (g *Graph) ImportDimacsLimit(r io.Reader, maxVertices int) (int, error) {
+	if maxVertices < 0 {
+		panic("eppstein: ImportDimacsLimit: negative maxVertices")
+	}
 	if r == nil {
 		return 0, errors.New("eppstein: ImportDimacs: nil reader")
 	}
@@ -111,11 +128,16 @@ func (g *Graph) ImportDimacs(r io.Reader) (int, error) {
 			if len(fields) != 4 || fields[1] != "sp" {
 				return count, importError(lineNumber, "expected 'p sp VERTICES EDGES'")
 			}
-			vertices, err1 := strconv.Atoi(fields[2])
-			_, err2 := strconv.ParseInt(fields[3], 10, 64)
-			if err1 != nil || err2 != nil || vertices < 0 {
+			declared, err1 := strconv.ParseUint(fields[2], 10, 64)
+			_, err2 := strconv.ParseUint(fields[3], 10, 64)
+			if err1 != nil || err2 != nil {
 				return count, importError(lineNumber, "expected 'p sp VERTICES EDGES'")
 			}
+			limit := min(maxVertices, math.MaxInt32-1) // vertex indices are stored as int32
+			if declared > uint64(limit) {
+				return count, importError(lineNumber, "%d vertices exceed the limit of %d (see ImportDimacsLimit)", declared, limit)
+			}
+			vertices := int(declared)
 			index = make([]int, vertices+1)
 			for i := 1; i <= vertices; i++ {
 				index[i] = g.AddVertex("V" + strconv.Itoa(i))
