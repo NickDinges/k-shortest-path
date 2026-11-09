@@ -1,0 +1,8 @@
+# tail,head,weight,group
+HOME,PARK,2,walk
+HOME,BAKERY,4,walk
+PARK,BAKERY,1,walk
+PARK,STATION,7,walk
+BAKERY,STATION,2,walk
+BAKERY,OFFICE,6,walk
+STATION,OFFICE,1,train

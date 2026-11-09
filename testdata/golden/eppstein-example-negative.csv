@@ -1,0 +1,22 @@
+# tail,head,weight,group
+S,A,2,alpha
+A,B,20,alpha
+E,I,20,alpha
+B,C,14,alpha
+B,F,14,alpha
+D,E,9,alpha
+E,F,10,alpha
+F,G,25,alpha
+H,I,18,alpha
+I,J,8,alpha
+J,T,11,alpha
+S,D,13,alpha
+A,E,27,alpha
+C,G,15,alpha
+D,H,15,alpha
+F,J,12,alpha
+G,T,7,alpha
+E,J,-1,beta
+F,T,-1,beta
+J,K,-1,beta
+C,C,-1,beta

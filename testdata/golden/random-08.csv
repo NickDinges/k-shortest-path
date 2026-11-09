@@ -1,0 +1,21 @@
+# tail,head,weight,group
+N0,N1,6,g1
+N0,N2,4,g0
+N0,N5,4,g1
+N1,N5,5,g0
+N1,N7,8,g1
+N3,N0,1,g0
+N3,N5,2,g0
+N4,N2,9,g0
+N4,N4,7,g0
+N4,N7,2,g0
+N5,N0,9,g0
+N5,N1,4,g0
+N5,N5,9,g1
+N6,N1,2,g1
+N6,N2,1,g0
+N6,N4,6,g1
+N6,N6,3,g0
+N7,N1,7,g1
+N7,N4,7,g0
+N7,N7,4,g1

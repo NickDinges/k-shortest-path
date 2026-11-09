@@ -1,0 +1,10 @@
+# tail,head,weight,group
+A,B,0,z
+A,C,0,z
+B,D,1,z
+C,D,1,z
+B,C,0,z
+D,E,0,z
+D,F,2,z
+E,F,0,z
+C,F,3,z
