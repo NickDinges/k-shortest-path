@@ -1,0 +1,15 @@
+\begin{table}[t]
+\centering
+\caption{Simple paths (Yen--Lawler with A*) on two-way grids: time for the paths after the first (ms).}
+\label{tab:yen}
+\small
+\begin{tabular}{lrrr}
+\toprule
+ & \cs{} & Go & Rust \\
+\midrule
+$200^2$, $k=100$ & \num{864} & \num{930} & \textbf{\num{666}} \\
+$200^2$, $k=1000$ & \textbf{\num{5512}} & \num{7402} & \num{5773} \\
+$1000^2$ local, ratio 0.1, $k=100$ & 95.7 & 50.9 & \textbf{34.5} \\
+\bottomrule
+\end{tabular}
+\end{table}

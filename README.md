@@ -10,7 +10,9 @@ Find the **shortest route** between two points in a network, then the **second s
 *The example graph from Eppstein's paper. The three shortest routes from S to T are drawn in red,
 blue and green. The number under each letter is the distance from that point to T.*
 
-> **Go version:** a Go port with the same API lives in [`go/`](go/README.md).
+> **Go and Rust versions:** ports with the same API and results live in [`go/`](go/README.md) and
+> [`rust/`](rust/README.md). A paper comparing the three and describing the algorithms and the
+> AI-assisted development is in [`paper/`](paper/README.md) ([PDF](paper/main.pdf)).
 
 **Contents**
 
@@ -812,6 +814,11 @@ What makes it fast:
   towards the goal, guided by the distances that are already known (section 10).
 - **Edges are stored by direction**, so the searches never look at edges going the wrong way.
 
+The benchmark now draws the weights from SplitMix64, identically in C#, Go (`go/cmd/benchmark`) and
+Rust (`rust/src/bin/benchmark.rs`), so all three build the same graphs; the tables above were
+measured earlier with `System.Random` (same weight distribution). The cross-language comparison is
+in the [paper](paper/README.md).
+
 Run the benchmark yourself (sizes are grid widths; `--k` = number of paths, `--local` = nearby
 vertices, `--ratio` = `MaxDetourRatio`, `--build strings|index|dimacs` = way of building,
 `--two-way` = every street in both directions, `--simple` = `SimplePathsOnly`, `--ch` = contraction
@@ -846,6 +853,8 @@ dotnet run -c Release --project Eppstein.Benchmarks -- 200 1000 --build index --
 | `.github/workflows/ci.yml` | CI: build, tests and a benchmark comparison for every pull request |
 | `docs/` | Images used in this README, and [an assessment of contraction hierarchies for this library](docs/research-ch-and-k-shortest-paths.md) (with measurements of the implementation) |
 | `go/` | Go port of the library ([own README](go/README.md)) |
+| `rust/` | Rust port of the library ([own README](rust/README.md)) |
+| `paper/` | Paper (LaTeX) with the cross-language measurements and their scripts ([README](paper/README.md)) |
 
 ```sh
 dotnet build Eppstein.sln   # compile (warnings count as errors)

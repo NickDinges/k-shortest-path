@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{Building the $10^6$-vertex grid ($2.1\cdot10^6$ edges), in ms, and the live memory of the graph with one query (built by index).}
+\label{tab:build}
+\small
+\begin{tabular}{lrrr}
+\toprule
+ & \cs{} & Go & Rust \\
+\midrule
+by index & \num{440} & \num{530} & \textbf{\num{253}} \\
+by label strings & \num{1131} & \num{1057} & \textbf{\num{736}} \\
+DIMACS text import & \num{560} & \num{873} & \textbf{\num{417}} \\
+\midrule
+live memory (MB) & 117 & 94 & 112 \\
+\bottomrule
+\end{tabular}
+\end{table}
