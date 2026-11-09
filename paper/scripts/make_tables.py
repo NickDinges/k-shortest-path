@@ -124,9 +124,11 @@ for lang, setting, label in [("C#", "default", r"\cs{} default"), ("C#", "gen0 2
     body += label + " & " + " & ".join(cells) + " \\\\\n"
 table("runtime.tex", "Runtime settings (median ms). Turning garbage collection off (Go) or making it rare (\\cs{}) has "
       "no measurable effect; disabling tiered compilation makes short \\cs{} runs 2--4$\\times$ faster.",
-      "tab:runtime", " & \\multicolumn{2}{c}{Eppstein $200^2$, $k=10^4$} & \\multicolumn{2}{c}{Eppstein $1000^2$, "
-      "$k=10^5$} & \\multicolumn{2}{c}{Yen $200^2$, $k=10^3$} \\\\ \\cmidrule(lr){2-3}\\cmidrule(lr){4-5}"
-      "\\cmidrule(lr){6-7}\n & tree & next & tree & next & tree & next", body, "lrrrrrr")
+      "tab:runtime", " & \\multicolumn{2}{c}{Eppstein $200^2$} & \\multicolumn{2}{c}{Eppstein $1000^2$} & "
+      "\\multicolumn{2}{c}{Yen $200^2$} \\\\\n & \\multicolumn{2}{c}{$k=10^4$} & \\multicolumn{2}{c}{$k=10^5$} & "
+      "\\multicolumn{2}{c}{$k=10^3$} \\\\ \\cmidrule(lr){2-3}\\cmidrule(lr){4-5}"
+      "\\cmidrule(lr){6-7}\n & tree & next & tree & next & tree & next", body,
+      "l" + ">{\\raggedleft\\arraybackslash}p{1.25cm}" * 6)
 
 # Number macros used in the text
 macros = {}
@@ -155,9 +157,11 @@ if os.path.exists(baseline):
     macros["NumVOneSize"] = last["size"]
     macros["NumVOneFirst"] = f"{first / 1000:.1f}\\,s" if first >= 1000 else f"{first:.0f}\\,ms"
     macros["NumVTwoFirst"] = f"{float(v2['first_ms']):.2f}\\,ms"
-    # size 3 is the first call in the process (JIT warm-up), not algorithm time
+    # size 3 is the first call in the process (JIT warm-up), not algorithm time; sizes beyond the
+    # largest one v1 finished were not measured for v1 (the run was stopped there)
+    max_size = int(last["size"])
     coords = lambda version, key: " ".join(f"({r['size']},{max(float(r[key]), 0.001)})" for r in b
-                                          if r["version"] == version and int(r["size"]) >= 4)
+                                          if r["version"] == version and 4 <= int(r["size"]) <= max_size)
     write("baseline.tex", r"""\begin{figure}[t]
 \centering
 \begin{tikzpicture}

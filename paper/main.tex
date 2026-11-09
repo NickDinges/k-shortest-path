@@ -1,4 +1,7 @@
 \documentclass[11pt,a4paper]{article}
+% Most compatible output (PDF 1.4, no object or xref streams) for browser and GitHub viewers
+\pdfminorversion=4
+\pdfobjcompresslevel=0
 
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
@@ -19,6 +22,12 @@
 \usepackage{xspace}
 \usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=green!40!black,urlcolor=blue!60!black]{hyperref}
 \usepackage[nameinlink]{cleveref}
+\hypersetup{
+  pdftitle={From a 2010 Prototype to Contraction Hierarchies in Three Languages},
+  pdfauthor={Nick Dinges},
+  pdfsubject={Engineering k shortest paths with Eppstein, Yen-Lawler, arc flags and PHAST in C\#, Go and Rust; an experiment with Claude},
+  pdfkeywords={k shortest paths, Eppstein, Yen, contraction hierarchies, PHAST, arc flags, garbage collection, Rust, Go, C\#, AI-assisted development}
+}
 
 \sisetup{group-separator={,},group-minimum-digits=4}
 \lstset{basicstyle=\ttfamily\small,columns=fullflexible,breaklines=true,frame=single,framerule=0.3pt}
@@ -28,9 +37,9 @@
 
 \input{tables/numbers}
 
-\title{From a 2010 Prototype to Contraction Hierarchies in Three Languages:\\
-Engineering $k$ Shortest Paths with Eppstein, Yen--Lawler, Arc Flags and PHAST\\
-\large An experiment in algorithm engineering with Claude}
+\title{From a 2010 Prototype to Contraction Hierarchies\\ in Three Languages\\[0.4em]
+\large Engineering $k$ Shortest Paths with Eppstein, Yen--Lawler, Arc Flags and PHAST\\
+An experiment in algorithm engineering with Claude}
 \author{Nick Dinges\thanks{This paper is the result of an experiment: the code in all three languages, the tests,
 the measurements and the text were generated with Claude, Anthropic's AI model, through Claude Code~\cite{claudecode},
 under the author's direction. See \cref{sec:ai}.}}
