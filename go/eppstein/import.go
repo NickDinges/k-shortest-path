@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Bulk import from CSV and DIMACS files.
@@ -119,7 +120,10 @@ func (g *Graph) ImportDimacsLimit(r io.Reader, maxVertices int) (int, error) {
 			continue
 		}
 
-		fields := strings.Fields(line)
+		fields := strings.Fields(line) // same separators as nextField
+		if len(fields) == 0 {
+			continue
+		}
 		switch fields[0] {
 		case "p":
 			if index != nil {
@@ -149,18 +153,14 @@ func (g *Graph) ImportDimacsLimit(r io.Reader, maxVertices int) (int, error) {
 	return count, scanner.Err()
 }
 
-// nextField returns the first field of s separated by spaces or tabs, and the rest of s.
-// The field shares memory with s (no allocation).
+// nextField returns the first field of s separated by white space (unicode.IsSpace, like
+// strings.Fields), and the rest of s. The field shares memory with s (no allocation).
 func nextField(s string) (field, rest string) {
-	start := 0
-	for start < len(s) && (s[start] == ' ' || s[start] == '\t') {
-		start++
+	s = strings.TrimLeftFunc(s, unicode.IsSpace)
+	if end := strings.IndexFunc(s, unicode.IsSpace); end >= 0 {
+		return s[:end], s[end:]
 	}
-	end := start
-	for end < len(s) && s[end] != ' ' && s[end] != '\t' {
-		end++
-	}
-	return s[start:end], s[end:]
+	return s, ""
 }
 
 // importError creates an import error with line number.

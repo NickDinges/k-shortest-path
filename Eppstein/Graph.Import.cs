@@ -96,7 +96,6 @@ public sealed partial class Graph
         int[]? index = null;  // vertex number -> vertex index
         int count = 0, lineNumber = 0;
         string? line;
-        char[] separators = { ' ', '\t' };
         while ((line = reader.ReadLine()) != null)
         {
             lineNumber++;
@@ -124,7 +123,7 @@ public sealed partial class Graph
                 continue;
             }
 
-            string[] fields = line.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+            string[] fields = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);  // White space, like NextToken
             if (fields[0] == "p")
             {
                 if (index != null)
@@ -150,16 +149,16 @@ public sealed partial class Graph
         return count;
     }
     /// <summary>
-    /// Returns the next token separated by spaces or tabs and removes it from the text
+    /// Returns the next token separated by white space and removes it from the text
     /// </summary>
     /// <returns>The token, empty if there are no more tokens</returns>
     private static ReadOnlySpan<char> NextToken(ref ReadOnlySpan<char> text)
     {
         int start = 0;
-        while (start < text.Length && (text[start] == ' ' || text[start] == '\t'))
+        while (start < text.Length && char.IsWhiteSpace(text[start]))
             start++;
         int end = start;
-        while (end < text.Length && text[end] != ' ' && text[end] != '\t')
+        while (end < text.Length && !char.IsWhiteSpace(text[end]))
             end++;
         ReadOnlySpan<char> token = text.Slice(start, end - start);
         text = text.Slice(end);
