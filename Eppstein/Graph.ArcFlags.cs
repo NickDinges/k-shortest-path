@@ -20,6 +20,7 @@ public sealed partial class Graph
     private int regionCount;
     private int autoRegionCount;
     private string? manualRegions;
+    private int[]? filePartition;  // Region of every vertex, from EnableArcFlagsFromPartition
     private int[] vertexRegion = Array.Empty<int>();
     private bool[] arcFlags = Array.Empty<bool>();  // flag of edge e for region r: arcFlags[e * regionCount + r]
 
@@ -52,6 +53,7 @@ public sealed partial class Graph
             return false;
         autoRegionCount = regionCount;
         manualRegions = null;
+        filePartition = null;
         arcFlagsEnabled = true;
         InvalidateArcFlags();
         ready = false;
@@ -71,10 +73,114 @@ public sealed partial class Graph
             return false;
         manualRegions = regions;
         autoRegionCount = 0;
+        filePartition = null;
         arcFlagsEnabled = true;
         InvalidateArcFlags();
         ready = false;
         return true;
+    }
+
+    /// <summary>
+    /// Enables arc flags with a partition computed by an external partitioner, e.g.
+    /// <a href="https://github.com/kahypar/mt-kahypar">mt-KaHyPar</a>, KaHIP or METIS.
+    /// </summary>
+    /// <remarks>
+    /// Write the graph with <see cref="WriteMetisGraph"/>, partition it, and pass the result: one line
+    /// per vertex, in the order of the vertex indices, with its region number (0, 1, 2, …). This is the
+    /// output format of the partitioners named above. Good partitions have few edges between regions,
+    /// which makes the preprocessing faster and the flags more selective. If vertices are added later,
+    /// arc flags are disabled on the next query (the partition no longer fits).
+    /// </remarks>
+    /// <param name="reader">The partition, e.g. a StreamReader for a file.</param>
+    /// <exception cref="ArgumentNullException">Thrown when reader is null.</exception>
+    /// <exception cref="FormatException">Thrown for a line that is not a region number between 0 and
+    /// VertexCount - 1 (the message names the line), or if the number of lines is not VertexCount.</exception>
+    public void EnableArcFlagsFromPartition(System.IO.TextReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int n = labels.Count;
+        int[] partition = new int[n];
+        int count = 0, lineNumber = 0;
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            lineNumber++;
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed[0] == '%' || trimmed[0] == '#')
+                continue;  // Empty or comment
+            if (!int.TryParse(trimmed, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out int region) || region >= Math.Max(n, 1))
+                throw new FormatException("Line " + lineNumber + ": expected a region number between 0 and " +
+                    (n - 1) + ", found '" + trimmed + "'");
+            if (count == n)
+                throw new FormatException("Line " + lineNumber + ": more lines than the " + n + " vertices of the graph");
+            partition[count++] = region;
+        }
+        if (count != n)
+            throw new FormatException("The partition has " + count + " regions, the graph has " + n + " vertices");
+
+        filePartition = partition;
+        manualRegions = null;
+        autoRegionCount = 0;
+        arcFlagsEnabled = true;
+        InvalidateArcFlags();
+        ready = false;
+    }
+
+    /// <summary>
+    /// Writes the graph in METIS format, the input format of graph partitioners such as mt-KaHyPar,
+    /// KaHIP and METIS (see <see cref="EnableArcFlagsFromPartition"/>).
+    /// </summary>
+    /// <remarks>
+    /// Partitioners expect an undirected graph: an edge in either direction connects two vertices
+    /// once. Self-loops, parallel edges and edges with negative weight (switched off) are left out.
+    /// Vertex i is written as METIS vertex i + 1.
+    /// </remarks>
+    /// <param name="writer">Destination, e.g. a StreamWriter for a .graph file.</param>
+    public void WriteMetisGraph(System.IO.TextWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        int n = labels.Count;
+        List<int>[] neighbors = new List<int>[n];
+        for (int v = 0; v < n; v++)
+            neighbors[v] = new List<int>();
+        for (int e = 0; e < edgeCount; e++)
+        {
+            int a = edgeTail[e], b = edgeHead[e];
+            if (a != b && edgeWeight[e] >= 0)
+            {
+                neighbors[a].Add(b);
+                neighbors[b].Add(a);
+            }
+        }
+        long undirected = 0;
+        for (int v = 0; v < n; v++)
+        {
+            neighbors[v].Sort();
+            int unique = 0;  // Remove duplicates in place
+            for (int i = 0; i < neighbors[v].Count; i++)
+            {
+                if (i == 0 || neighbors[v][i] != neighbors[v][i - 1])
+                    neighbors[v][unique++] = neighbors[v][i];
+            }
+            neighbors[v].RemoveRange(unique, neighbors[v].Count - unique);
+            undirected += unique;
+        }
+
+        writer.WriteLine(n.ToString(System.Globalization.CultureInfo.InvariantCulture) + " " +
+            (undirected / 2).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        System.Text.StringBuilder line = new();
+        for (int v = 0; v < n; v++)
+        {
+            line.Clear();
+            foreach (int w in neighbors[v])
+            {
+                if (line.Length > 0)
+                    line.Append(' ');
+                line.Append(w + 1);
+            }
+            writer.WriteLine(line.ToString());
+        }
     }
 
     /// <summary>
@@ -85,6 +191,7 @@ public sealed partial class Graph
         arcFlagsEnabled = false;
         autoRegionCount = 0;
         manualRegions = null;
+        filePartition = null;
         arcFlagsValid = false;
         regionCount = 0;
         vertexRegion = Array.Empty<int>();
@@ -122,7 +229,9 @@ public sealed partial class Graph
         if (!arcFlagsEnabled || arcFlagsValid)
             return;
         EnsureAdjacency();
-        int[]? partition = manualRegions != null ? ParsePartition(manualRegions) : AutomaticPartition(autoRegionCount);
+        int[]? partition = filePartition != null ? (filePartition.Length == labels.Count ? (int[])filePartition.Clone() : null)
+            : manualRegions != null ? ParsePartition(manualRegions)
+            : AutomaticPartition(autoRegionCount);
         if (partition == null)
         {
             DisableArcFlags();  // Partition no longer valid (vertices were recreated)

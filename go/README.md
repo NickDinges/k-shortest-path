@@ -120,6 +120,8 @@ properties, so a few names differ:
 | invalid limit: `ArgumentOutOfRangeException` | invalid limit: returns `false` |
 | `g.EnableArcFlags(3)` | `g.EnableArcFlags(3)` |
 | `g.EnableArcFlags("S,A;B,C")` | `g.EnableArcFlagsRegions("S,A;B,C")` |
+| `g.EnableArcFlagsFromPartition(reader)` (throws `FormatException`) | `g.EnableArcFlagsFromPartition(r)` → `error` |
+| `g.WriteMetisGraph(writer)` | `g.WriteMetisGraph(w)` → `error` |
 | `g.DisableArcFlags()` / `g.PrecomputeArcFlags()` | `g.DisableArcFlags()` / `g.PrecomputeArcFlags()` |
 | `g.ArcFlagsEnabled` / `g.ArcFlagsRegionCount` | `g.ArcFlagsEnabled()` / `g.ArcFlagsRegionCount()` |
 | `g.Serialize()` | `g.Serialize()` |

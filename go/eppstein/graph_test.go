@@ -1108,3 +1108,51 @@ func TestSimplePathsEdgeCasesAndLaziness(t *testing.T) {
 		t.Fatalf("%d simple paths, want 15", count)
 	}
 }
+
+func TestWriteMetisGraphWritesUndirectedSimpleGraph(t *testing.T) {
+	g := NewGraph()
+	g.CreateVertices("A,B,C,D")
+	g.CreateEdges("A,B,A,B,C,C", "B,A,B,C,C,D", 1, "x") // A-B three times, self-loop C, C-D
+	g.CreateEdges("D", "A", -1, "off")                  // switched off: left out
+	var b strings.Builder
+	if err := g.WriteMetisGraph(&b); err != nil {
+		t.Fatal(err)
+	}
+	if b.String() != "4 3\n2\n1 3\n2 4\n3\n" {
+		t.Fatalf("METIS output %q", b.String())
+	}
+}
+
+func TestEnableArcFlagsFromPartitionUsesExternalPartition(t *testing.T) {
+	g := eppsteinExample()
+	plain := weights(take(eppsteinExample(), "S", "T", 30))
+	// same regions as "S,A,B,C;D,E,F;G,H,I,J,K,T", one region number per vertex (in index order)
+	err := g.EnableArcFlagsFromPartition(strings.NewReader("% from a partitioner\n0\n0\n0\n0\n1\n1\n1\n2\n2\n2\n2\n2\n2\n"))
+	if err != nil || !g.ArcFlagsEnabled() || g.ArcFlagsRegionCount() != 3 {
+		t.Fatalf("err %v, regions %d", err, g.ArcFlagsRegionCount())
+	}
+	if e, _ := g.FindVertex("E"); e.Region() != 1 {
+		t.Fatalf("region of E = %d", e.Region())
+	}
+	if w := weights(take(g, "S", "T", 30)); !equalInts(w, plain) {
+		t.Fatalf("weights %v, want %v", w, plain)
+	}
+	for text, want := range map[string]string{
+		"0\n1\n":                  "13 vertices",
+		strings.Repeat("0\n", 14): "line 14:",
+		"0\n-1\n":                 "line 2:",
+		"x\n":                     "line 1:",
+		"13\n":                    "line 1:", // region >= VertexCount
+	} {
+		if err := eppsteinExample().EnableArcFlagsFromPartition(strings.NewReader(text)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: error %v, want %s", text, err, want)
+		}
+	}
+	if eppsteinExample().EnableArcFlagsFromPartition(nil) == nil || g.WriteMetisGraph(nil) == nil {
+		t.Error("nil accepted")
+	}
+	g.AddVertex("NEW") // partition no longer fits: arc flags are disabled on the next query
+	if w := weights(take(g, "S", "T", 5)); !equalInts(w, plain[:5]) || g.ArcFlagsEnabled() {
+		t.Fatalf("after AddVertex: %v, enabled %v", w, g.ArcFlagsEnabled())
+	}
+}

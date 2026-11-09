@@ -299,7 +299,7 @@ or edge. That way the graph always knows when its prepared data is outdated.
 | `Serialize(...)` | Produces a Graphviz drawing of the graph. | [6](#6-drawing-your-graph-graphviz) |
 | `SimplePathsOnly` | Only routes that visit no vertex twice (no loops); Yen's algorithm. | [8](#8-routes-without-loops-simplepathsonly) |
 | `MaxDetour`, `MaxDetourRatio` | Only paths at most this much longer than the shortest one (much faster on large graphs). | [9](#9-faster-queries-corridor-and-arc-flags) |
-| `EnableArcFlags(...)`, `DisableArcFlags()`, `PrecomputeArcFlags()`, `ArcFlagsEnabled`, `ArcFlagsRegionCount` | Optional speed-up for many queries. | [9](#9-faster-queries-corridor-and-arc-flags) |
+| `EnableArcFlags(...)`, `EnableArcFlagsFromPartition(reader)`, `WriteMetisGraph(writer)`, `DisableArcFlags()`, `PrecomputeArcFlags()`, `ArcFlagsEnabled`, `ArcFlagsRegionCount` | Optional speed-up for many queries, also with regions from an external partitioner. | [9](#9-faster-queries-corridor-and-arc-flags) |
 
 ## 6. Drawing your graph (Graphviz)
 
@@ -561,6 +561,50 @@ Good to know:
 - `CreateVertices` turns arc flags off. Call `EnableArcFlags` again afterwards.
 - The preparation costs time. It pays off only if you run **many** queries on the same graph.
 - `g.DisableArcFlags()` switches the feature off again.
+
+#### Better regions with an external partitioner
+
+The built-in partition (`EnableArcFlags(3)`) simply cuts a breadth-first ordering into pieces. Good
+regions have **few edges between them**; specialised graph partitioners find such regions. The
+library can hand its graph to one and read the result back:
+
+```csharp
+using (var file = new StreamWriter("graph.metis"))
+    g.WriteMetisGraph(file);                       // 1. graph in METIS format
+
+// 2. run a partitioner, e.g. mt-KaHyPar (below), KaHIP or METIS
+
+using (var file = new StreamReader("graph.part"))
+    g.EnableArcFlagsFromPartition(file);           // 3. one region number per vertex
+```
+
+With [mt-KaHyPar](https://github.com/kahypar/mt-kahypar) from Python (`pip install mtkahypar`):
+
+```python
+import mtkahypar
+init = mtkahypar.initialize(4)                                    # 4 threads
+ctx = init.context_from_preset(mtkahypar.PresetType.DEFAULT)
+ctx.set_partitioning_parameters(16, 0.03, mtkahypar.Objective.CUT)  # 16 regions, 3% imbalance
+graph = init.graph_from_file("graph.metis", ctx, mtkahypar.FileFormat.METIS)
+graph.partition(ctx).write_partition_to_file("graph.part")
+```
+
+`WriteMetisGraph` writes the graph undirected (METIS needs that), without self-loops, duplicate
+and switched-off edges. The partition file has one line per vertex, in the order of the vertex
+indices. If vertices are added later, arc flags switch off on the next query.
+
+Measured on two-way grid streets with 40,000 vertices (results identical in all cases):
+
+| Regions | Partition | Edges between regions | Preparation | Query (without arc flags) |
+|---|---|---|---|---|
+| 4 | built-in | 1,920 | 10.1 s | 7.3 ms (8.6 ms) |
+| 4 | mt-KaHyPar | 918 | 9.0 s | 7.1 ms (8.6 ms) |
+| 16 | built-in | 8,384 | 43.8 s | 8.8 ms (10.7 ms) |
+| 16 | mt-KaHyPar | 2,736 | 26.1 s | 6.8 ms (8.5 ms) |
+
+A good partition makes the preparation up to 1.7 times faster. The query gains about 20% either
+way: as explained above, Eppstein's algorithm needs every distance, so arc flags can only skip
+edge checks.
 
 <details>
 <summary>Technical details</summary>

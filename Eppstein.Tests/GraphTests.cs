@@ -817,6 +817,59 @@ namespace Eppstein.Tests
         }
 
         [Fact]
+        public void WriteMetisGraph_WritesUndirectedSimpleGraph()
+        {
+            Graph g = new Graph();
+            g.CreateVertices("A,B,C,D");
+            g.CreateEdges("A,B,A,B,C,C", "B,A,B,C,C,D", 1, "x");  // A-B three times, self-loop C, C-D
+            g.CreateEdges("D", "A", -1, "off");                    // Switched off: left out
+            StringWriter writer = new StringWriter();
+            g.WriteMetisGraph(writer);
+            Assert.Equal(new[] { "4 3", "2", "1 3", "2 4", "3" },
+                writer.ToString().Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0 || false).ToArray());
+
+            // Every edge of the example appears in both directions of the adjacency lists
+            StringWriter example = new StringWriter();
+            EppsteinExample().WriteMetisGraph(example);
+            string[] lines = example.ToString().Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+            int[] header = lines[0].Split(' ').Select(int.Parse).ToArray();
+            List<int[]> adjacency = lines.Skip(1).Take(header[0])
+                .Select(l => l.Length == 0 ? new int[0] : l.Split(' ').Select(int.Parse).ToArray()).ToList();
+            Assert.Equal(13, header[0]);
+            Assert.Equal(header[1] * 2, adjacency.Sum(a => a.Length));
+            for (int v = 0; v < adjacency.Count; v++)
+                foreach (int w in adjacency[v])
+                    Assert.Contains(v + 1, adjacency[w - 1]);
+        }
+
+        [Fact]
+        public void EnableArcFlagsFromPartition_UsesExternalPartition()
+        {
+            Graph g = EppsteinExample();
+            List<long> plain = Take(EppsteinExample(), "S", "T", 30).Select(p => p.Weight).ToList();
+
+            // Same regions as "S,A,B,C;D,E,F;G,H,I,J,K,T", one region number per vertex (in index order)
+            g.EnableArcFlagsFromPartition(new StringReader("% from a partitioner\n0\n0\n0\n0\n1\n1\n1\n2\n2\n2\n2\n2\n2\n"));
+            Assert.True(g.ArcFlagsEnabled);
+            Assert.Equal(3, g.ArcFlagsRegionCount);
+            Assert.Equal(1, g.FindVertex("E").Value.Region);
+            Assert.Equal(plain, Take(g, "S", "T", 30).Select(p => p.Weight));
+
+            Func<string, string> error = text => Assert.Throws<FormatException>(
+                () => EppsteinExample().EnableArcFlagsFromPartition(new StringReader(text))).Message;
+            Assert.Contains("13 vertices", error("0\n1\n"));                          // Too few lines
+            Assert.StartsWith("Line 14:", error(string.Concat(Enumerable.Repeat("0\n", 14))));  // Too many
+            Assert.StartsWith("Line 2:", error("0\n-1\n"));
+            Assert.StartsWith("Line 1:", error("x\n"));
+            Assert.StartsWith("Line 1:", error("13\n"));                               // Region >= VertexCount
+            Assert.Throws<ArgumentNullException>(() => g.EnableArcFlagsFromPartition(null));
+
+            g.AddVertex("NEW");  // Partition no longer fits: arc flags are disabled on the next query
+            Assert.Equal(plain.Take(5), Take(g, "S", "T", 5).Select(p => p.Weight));
+            Assert.False(g.ArcFlagsEnabled);
+        }
+
+        [Fact]
         public void Serialize_WritesAllVerticesAndEdges()
         {
             Graph g = EppsteinExample();
