@@ -33,8 +33,8 @@ func Example() {
 	// 1. HOME,PARK,BAKERY,STATION,OFFICE  (6 minutes)
 	// 2. HOME,BAKERY,STATION,OFFICE  (7 minutes)
 	// 3. HOME,PARK,BAKERY,OFFICE  (9 minutes)
-	// 4. HOME,PARK,STATION,OFFICE  (10 minutes)
-	// 5. HOME,BAKERY,OFFICE  (10 minutes)
+	// 4. HOME,BAKERY,OFFICE  (10 minutes)
+	// 5. HOME,PARK,STATION,OFFICE  (10 minutes)
 }
 
 // Draw the graph with Graphviz: write the output to a file and run "dot -Tsvg".

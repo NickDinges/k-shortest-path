@@ -78,8 +78,8 @@ $ go run .
 1. HOME,PARK,BAKERY,STATION,OFFICE  (6 minutes)
 2. HOME,BAKERY,STATION,OFFICE  (7 minutes)
 3. HOME,PARK,BAKERY,OFFICE  (9 minutes)
-4. HOME,PARK,STATION,OFFICE  (10 minutes)
-5. HOME,BAKERY,OFFICE  (10 minutes)
+4. HOME,BAKERY,OFFICE  (10 minutes)
+5. HOME,PARK,STATION,OFFICE  (10 minutes)
 ```
 
 This example is also a test (`eppstein/example_test.go`), so it is guaranteed to stay correct.
@@ -101,6 +101,10 @@ properties, so a few names differ:
 | `g.EnableArcFlags("S,A;B,C")` | `g.EnableArcFlagsRegions("S,A;B,C")` |
 | `g.DisableArcFlags()` / `g.PrecomputeArcFlags()` | `g.DisableArcFlags()` / `g.PrecomputeArcFlags()` |
 | `g.ArcFlagsEnabled` / `g.ArcFlagsRegionCount` (properties) | `g.ArcFlagsEnabled()` / `g.ArcFlagsRegionCount()` |
+| `g.MaxDetour = 15` / `g.MaxDetour` | `g.SetMaxDetour(15)` → `bool` / `g.MaxDetour()` |
+| `g.MaxDetourRatio = 0.2` / `g.MaxDetourRatio` | `g.SetMaxDetourRatio(0.2)` → `bool` / `g.MaxDetourRatio()` |
+| `long.MaxValue` / `double.PositiveInfinity` (no limit) | `math.MaxInt64` / `math.Inf(1)` |
+| invalid limit: `ArgumentOutOfRangeException` | invalid limit: returns `false` |
 | `g.Serialize()` | `g.Serialize()` |
 | `g.Serialize(path)` | `g.SerializePath(path)` |
 | `g.Serialize(listOfPaths)` | `g.SerializePaths([]eppstein.Path{p1, p2})` |
@@ -120,7 +124,8 @@ The same rules as in the C# version apply (see
 [section 7 of the main README](../README.md#7-things-to-know-common-pitfalls)):
 
 - **Graphs with cycles have infinitely many paths.** Always limit the loop
-  (`for i := 0; i < k && p.IsValid(); i++`).
+  (`for i := 0; i < k && p.IsValid(); i++`), or set a corridor with `SetMaxDetour` or
+  `SetMaxDetourRatio`: then the number of paths is finite.
 - **An empty path means "no path":** unknown vertex name, goal not reachable, or start equals goal.
 - **Vertex names:** letters and digits, starting with a letter; not case-sensitive, stored in
   upper case.
@@ -144,9 +149,11 @@ Same grid graphs as in [section 10 of the main README](../README.md#10-performan
 
 | Vertices | Edges | Build graph | First path + next 10,000 paths |
 |---|---|---|---|
-| 2,500 | 5,100 | 6 ms | 104 ms |
-| 10,000 | 20,700 | 17 ms | 182 ms |
-| 40,000 | 83,400 | 87 ms | 354 ms |
+| 10,000 | 20,700 | 20 ms | 62 ms |
+| 40,000 | 83,400 | 72 ms | 119 ms |
+
+Nearby vertices in the middle of a 1,000,000-vertex grid, first path + next 10,000 paths:
+221 ms without a corridor, **33 ms** with `g.SetMaxDetourRatio(0.1)`.
 
 ```sh
 go test -run none -bench . -benchmem ./eppstein
@@ -160,7 +167,8 @@ go test -run none -bench . -benchmem ./eppstein
 | `eppstein/arcflags.go` | Optional arc-flags speed-up |
 | `eppstein/serialize.go` | Graphviz (DOT) output |
 | `eppstein/elements.go` | `Vertex`, `Edge` and `Path` types |
-| `eppstein/pqueue.go` | Priority queue used by the algorithm |
+| `eppstein/pqueue.go` | Priority queue (binary heap) used by the algorithm |
+| `eppstein/sidetrackheap.go` | Persistent heap of detours (Eppstein's path enumeration) |
 | `eppstein/*_test.go` | Tests, benchmarks and runnable examples |
 | `cmd/eppstein/main.go` | Demo program (`go run ./cmd/eppstein [k] [--dot file]`) |
 

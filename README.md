@@ -21,7 +21,7 @@ blue and green. The number under each letter is the distance from that point to 
 5. [API reference](#5-api-reference)
 6. [Drawing your graph (Graphviz)](#6-drawing-your-graph-graphviz)
 7. [Things to know (common pitfalls)](#7-things-to-know-common-pitfalls)
-8. [Speeding up repeated queries: arc flags](#8-speeding-up-repeated-queries-arc-flags)
+8. [Faster queries: corridor and arc flags](#8-faster-queries-corridor-and-arc-flags)
 9. [How the algorithm works](#9-how-the-algorithm-works)
 10. [Performance](#10-performance)
 11. [Project layout and tests](#11-project-layout-and-tests)
@@ -204,7 +204,8 @@ A `Path` is a list of `Edge` objects (`List<Edge>`), so you can loop over it wit
 | Method | What it does | Section |
 |---|---|---|
 | `Serialize(...)` | Produces a Graphviz drawing of the graph. | [6](#6-drawing-your-graph-graphviz) |
-| `EnableArcFlags(...)`, `DisableArcFlags()`, `PrecomputeArcFlags()`, `ArcFlagsEnabled`, `ArcFlagsRegionCount` | Optional speed-up. | [8](#8-speeding-up-repeated-queries-arc-flags) |
+| `MaxDetour`, `MaxDetourRatio` | Only paths at most this much longer than the shortest one (much faster on large graphs). | [8](#8-faster-queries-corridor-and-arc-flags) |
+| `EnableArcFlags(...)`, `DisableArcFlags()`, `PrecomputeArcFlags()`, `ArcFlagsEnabled`, `ArcFlagsRegionCount` | Optional speed-up for many queries. | [8](#8-faster-queries-corridor-and-arc-flags) |
 
 ## 6. Drawing your graph (Graphviz)
 
@@ -247,6 +248,7 @@ dotnet run --project Eppstein2 -- 5 --dot graph.dot
     goal).
 - **Dashed** arrows have a negative weight, so they are switched off (see section 7).
 - If arc flags are on, each region is drawn as a dashed box (see section 8).
+- With a corridor (section 8), vertices outside of it show no distance: they were not needed.
 
 ## 7. Things to know (common pitfalls)
 
@@ -259,6 +261,9 @@ number of paths you ask for:**
 for (int i = 0; i < 10 && p.IsValid; i++) { ... }   // good: at most 10 paths
 while (p.IsValid) { ... }                            // may never end on a graph with cycles
 ```
+
+Alternatively, set a corridor (`MaxDetour` or `MaxDetourRatio`, section 8): then the number of
+paths is finite and the `while` loop ends by itself.
 
 **2. An empty path means "no path".** `FindShortestPath` returns an empty path
 (`IsValid == false`) when:
@@ -307,9 +312,45 @@ int  x = path.Weight;   // error CS0266: cannot convert 'long' to 'int'
 
 The total weight of a path must still fit into a `long`; there is no overflow check.
 
-## 8. Speeding up repeated queries: arc flags
+## 8. Faster queries: corridor and arc flags
 
-*Optional. You only need this for large graphs where you run many queries.*
+Both are optional. The results never change, except that the corridor deliberately leaves out
+paths that are too long.
+
+### Corridor: only paths that are not much longer
+
+In practice you rarely want *every* alternative: a route that is three times as long as the best
+one is useless. Tell the library how much longer a path may be, and it only looks at the part of
+the graph where such paths can lie:
+
+```csharp
+g.MaxDetourRatio = 0.2;   // paths at most 20% longer than the shortest one
+// or an absolute limit, in the unit of your weights:
+g.MaxDetour = 15;         // paths at most 15 minutes longer than the shortest one
+
+Path p = g.FindShortestPath("HOME", "OFFICE");
+while (p.IsValid)         // ends by itself: the number of paths within the limit is finite
+{
+    Console.WriteLine(p.VertexNames + " (" + p.Weight + ")");
+    p = g.FindNextShortestPath();
+}
+```
+
+Good to know:
+
+- **Big speed-up on large graphs**, when start and goal are close to each other: the search only
+  covers the area around the goal that is reachable within "shortest + detour". In a network
+  with 1 million vertices, a local query takes 18 ms instead of 181 ms (see section 10).
+- `FindNextShortestPath` returns an **empty path** once all paths within the limit have been
+  returned, so a `while (p.IsValid)` loop is safe here, even with cycles.
+- If you set both, the **smaller** limit applies.
+- After changing a limit, call `FindShortestPath` again.
+- Remove the limits with `g.MaxDetour = long.MaxValue;` and
+  `g.MaxDetourRatio = double.PositiveInfinity;` (the defaults).
+
+### Arc flags: preparation for many queries
+
+*You only need this for large graphs where you run many queries.*
 
 **The idea in one sentence:** split the vertices into regions, and remember for every edge whether
 it is ever useful for reaching each region. When you later search for routes into a region, edges
@@ -362,36 +403,62 @@ You don't need this to use the library, but here's the intuition.
    This is never negative.
 3. **Every path = a list of detours.** Follow the tree, except where you take a detour. So a path
    is fully described by its detours, and its length is the shortest length plus the extra costs.
-4. **Best first.** A priority queue (a "to-do list" sorted by total length) starts with the
-   shortest path (no detours). Each time a path is taken out, the paths with *one more* detour are
-   added. Detours never make a path shorter, so paths come out in the right order. Only what is
-   needed is computed, which is why graphs with cycles work.
+4. **Detours sorted per vertex.** For every vertex `v`, a heap (a structure that always knows its
+   smallest element) holds all detours you can still take on the way from `v` to the goal, sorted
+   by their extra cost. The heap of `v` is the heap of the next vertex plus `v`'s own detours.
+   It is *persistent*: building it copies only a few nodes and shares the rest, so it is cheap.
+   Heaps are only built for vertices that are actually needed.
+5. **Best first.** A priority queue (a "to-do list" sorted by total length) starts with the
+   shortest path (no detours). Each time a path is taken out, at most three new candidates are
+   added: the *next best alternatives* for its last detour (two heap neighbors), and the *best
+   additional detour* after it (top of the heap at its end). Extra costs are never negative, so
+   paths come out in the right order. Only what is needed is computed, which is why graphs with
+   cycles work. This is the core idea of Eppstein's paper.
 
 ## 10. Performance
 
 The library handles graphs with millions of edges. Measured on grid graphs (each vertex connected
 to its right and lower neighbor, every 10th vertex also back to the left, random weights 1–100),
-searching from one corner to the opposite one, in Release mode on a 4-core cloud VM:
+in Release mode on a 4-core cloud VM.
 
-| Vertices | Edges | Build graph | First path | Next 10,000 paths |
+**From one corner to the opposite one** (paths cross the whole graph):
+
+| Vertices | Edges | Build graph | First path | First path, repeated query | Next 10,000 paths |
+|---|---|---|---|---|---|
+| 2,500 | 5,100 | 31 ms | 13 ms | 4 ms | 67 ms |
+| 10,000 | 20,700 | 43 ms | 12 ms | 9 ms | 92 ms |
+| 40,000 | 83,400 | 139 ms | 49 ms | 42 ms | 92 ms |
+| 160,000 | 334,800 | 596 ms | 100 ms | 82 ms | 392 ms |
+| 1,000,000 | 2,097,000 | 5.1 s | 909 ms | 625 ms | 842 ms |
+
+**Between two nearby vertices** in the middle of the 1,000,000-vertex grid, with and without a
+corridor (section 8):
+
+| Corridor | First path | First path, repeated query | Next paths | Paths found |
 |---|---|---|---|---|
-| 2,500 | 5,100 | 32 ms | 11 ms | 158 ms |
-| 10,000 | 20,700 | 49 ms | 15 ms | 180 ms |
-| 40,000 | 83,400 | 175 ms | 35 ms | 371 ms |
-| 160,000 | 334,800 | 641 ms | 159 ms | 873 ms |
-| 1,000,000 | 2,097,000 | 5.1 s | 1.5 s | 1.8 s |
+| none | 388 ms | 181 ms | 56 ms | 10,000 (limit of the benchmark) |
+| `MaxDetourRatio = 0.1` | 116 ms | **18 ms** | 54 ms | 10,000 (limit of the benchmark) |
+| `MaxDetourRatio = 0.02` | 128 ms | **22 ms** | 5 ms | 1,169 (all within 2%) |
+
+The first query after building or changing the graph includes one-time preparation (sorting the
+edges by direction, about 0.1–0.3 s per million vertices); the "repeated query" column shows a
+query without it.
 
 What makes it fast:
 
 - **Vertex lookup by name** uses a dictionary, so adding an edge takes constant time.
 - **Priority queues** are binary heaps (O(log n) per operation).
-- **Candidate paths share memory:** each candidate stores only its parent and one extra detour,
-  instead of a copy of all its detours.
+- **At most three candidates per path**, thanks to the persistent detour heaps (section 9).
+  Candidates store only their parent and one detour, not a copy of all detours.
+- **The corridor** stops the shortest-path search where no allowed path can lie.
+- **Edges are stored by direction**, so the searches never look at edges going the wrong way.
 
-Run the benchmark yourself (sizes are grid widths, `--k` the number of paths):
+Run the benchmark yourself (sizes are grid widths; `--k` = number of paths, `--local` = nearby
+vertices, `--ratio` = `MaxDetourRatio`):
 
 ```sh
 dotnet run -c Release --project Eppstein2.Benchmarks -- 50 100 200 --k 10000
+dotnet run -c Release --project Eppstein2.Benchmarks -- 1000 --local --ratio 0.1
 ```
 
 ## 11. Project layout and tests
@@ -403,6 +470,7 @@ dotnet run -c Release --project Eppstein2.Benchmarks -- 50 100 200 --k 10000
 | `Eppstein2/Graph.Serialize.cs` | Graphviz (DOT) output |
 | `Eppstein2/GraphElements.cs` | `Vertex`, `Edge` and `Path` classes |
 | `Eppstein2/PriorityQueue.cs` | Priority queue (binary heap) used by the algorithm |
+| `Eppstein2/SidetrackHeap.cs` | Persistent heap of detours (Eppstein's path enumeration) |
 | `Eppstein2/Program.cs` | Demo program (`dotnet run --project Eppstein2 -- [k] [--dot file]`) |
 | `Eppstein2.Tests/` | Automated tests (xUnit) |
 | `Eppstein2.Benchmarks/` | Timing benchmark (see section 10) |

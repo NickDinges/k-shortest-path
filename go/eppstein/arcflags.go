@@ -221,6 +221,7 @@ func (g *Graph) applyAutomaticPartition(count int) {
 // another region) a backward Dijkstra to b is run and every tight arc
 // (d(u,b) = w(u,v) + d(v,b)) gets flag r. Negative arcs are ignored.
 func (g *Graph) computeArcFlags() {
+	g.ensureAdjacency() // backward Dijkstra uses incoming edge slices
 	var arcs []*Edge
 	var boundary []*Vertex
 	isBoundary := make(map[*Vertex]bool)
@@ -266,8 +267,8 @@ func (g *Graph) backwardDistances(target *Vertex) map[*Vertex]int64 {
 	for {
 		if v != nil {
 			dv := dist[v]
-			for _, e := range v.RelatedEdges {
-				if _, done := dist[e.Tail]; e.Head == v && e.Weight >= 0 && !done {
+			for _, e := range v.inEdges {
+				if _, done := dist[e.Tail]; e.Weight >= 0 && !done {
 					fringe.Enqueue(e, e.Weight+dv)
 				}
 			}

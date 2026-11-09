@@ -25,6 +25,12 @@ type Vertex struct {
 	RelatedEdges []*Edge
 	// Region of the vertex for the arc-flags optimization, -1 if not assigned.
 	Region int
+
+	// outEdges and inEdges split RelatedEdges by direction (built by the graph before a query).
+	outEdges, inEdges []*Edge
+	// sidetrackHeap holds the sidetracks on the tree path from this vertex to t, built on demand.
+	sidetrackHeap      *heapNode
+	sidetrackHeapBuilt bool
 }
 
 // NewVertex creates a vertex with the given label.

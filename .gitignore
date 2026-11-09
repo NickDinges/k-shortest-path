@@ -3,3 +3,5 @@ obj/
 *.user
 .vs/
 TestResults/
+*.test
+*.prof
