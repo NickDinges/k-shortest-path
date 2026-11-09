@@ -5,7 +5,7 @@ using System.Linq;
 using Eppstein;
 using Xunit;
 
-namespace Eppstein2.Tests
+namespace Eppstein.Tests
 {
     public class GraphTests
     {
@@ -83,10 +83,10 @@ namespace Eppstein2.Tests
 
         private static void AssertValidPath(GraphPath p, string s, string t)
         {
-            Assert.True(p[0].Tail.Equals(s));
-            Assert.True(p[p.Count - 1].Head.Equals(t));
+            Assert.Equal(s, p[0].Tail.Label);
+            Assert.Equal(t, p[p.Count - 1].Head.Label);
             for (int i = 1; i < p.Count; i++)
-                Assert.Same(p[i - 1].Head, p[i].Tail);
+                Assert.Equal(p[i - 1].Head, p[i].Tail);
         }
 
         [Fact]
@@ -223,42 +223,179 @@ namespace Eppstein2.Tests
         }
 
         [Fact]
-        public void PriorityQueue_ReturnsElementsSorted_AndStableForTies()
+        public void SidetrackHeap_MergeIsPersistentAndHeapOrdered()
         {
             Random rnd = new Random(7);
-            PriorityQueue<SP_Node> queue = new PriorityQueue<SP_Node>(0);
-            List<SP_Node> nodes = new List<SP_Node>();
-            for (int i = 0; i < 2000; i++)
+            SidetrackHeapNode heap = null;
+            List<SidetrackHeapNode> versions = new List<SidetrackHeapNode>();
+            List<List<long>> contents = new List<List<long>>();
+            List<long> keys = new List<long>();
+            for (int i = 0; i < 300; i++)
             {
-                SP_Node node = new SP_Node(null, rnd.Next(0, 50));
-                nodes.Add(node);
-                queue.Enqueue(node);
-                if (i % 7 == 0)  // Interleave dequeues
-                    nodes.Remove(queue.Dequeue());
+                long key = rnd.Next(0, 50);
+                heap = SidetrackHeapNode.Merge(heap, new SidetrackHeapNode(i, key));
+                keys.Add(key);
+                versions.Add(heap);
+                contents.Add(keys.OrderBy(k => k).ToList());
             }
-            Assert.Equal(nodes.Min(n => n.Weight), queue.Root().Weight);
-            List<SP_Node> expected = nodes.OrderBy(n => n.Weight).ToList();  // OrderBy is stable
-            List<SP_Node> actual = new List<SP_Node>();
-            while (queue.Count > 0)
-                actual.Add(queue.Dequeue());
-            Assert.Equal(expected, actual);
-            Assert.Null(queue.Dequeue());
+            // Every version still contains exactly its keys, in heap order (persistence)
+            for (int i = 0; i < versions.Count; i += 37)
+                Assert.Equal(contents[i], HeapKeys(versions[i]).OrderBy(k => k));
+        }
+
+        private static List<long> HeapKeys(SidetrackHeapNode node)
+        {
+            List<long> result = new List<long>();
+            Stack<SidetrackHeapNode> stack = new Stack<SidetrackHeapNode>();
+            if (node != null)
+                stack.Push(node);
+            while (stack.Count > 0)
+            {
+                SidetrackHeapNode n = stack.Pop();
+                result.Add(n.Key);
+                foreach (SidetrackHeapNode child in new[] { n.Left, n.Right })
+                {
+                    if (child != null)
+                    {
+                        Assert.True(child.Key >= n.Key, "heap order");
+                        stack.Push(child);
+                    }
+                }
+            }
+            return result;
         }
 
         [Fact]
-        public void SidetrackChain_RebuildsFullCollection()
+        public void LabelLookup_DoesNotDependOnCulture()
+        {
+            System.Globalization.CultureInfo before = System.Globalization.CultureInfo.CurrentCulture;
+            try
+            {
+                // Turkish: "i".ToUpper() is the dotted capital I, which broke the lookup before
+                System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("tr-TR");
+                Graph g = new Graph();
+                Assert.True(g.CreateVertices("Izmir,Ankara"));
+                Assert.True(g.CreateEdges("izmir", "ankara", 1, "x"));
+                Assert.Equal(0, g.GetVertexIndex("IZMIR"));
+                Assert.Equal("IZMIR,ANKARA", g.FindShortestPath("izmir", "Ankara").VertexNames);
+            }
+            finally
+            {
+                System.Globalization.CultureInfo.CurrentCulture = before;
+            }
+        }
+
+        [Fact]
+        public void SetEdgeWeight_InvalidatesArcFlagsAndQuery()
+        {
+            // Changing a weight directly on a public field used to leave arc flags outdated (wrong result)
+            Graph g = new Graph();
+            g.CreateVertices("S,A,B,T");
+            g.CreateEdges("S,A", "A,T", 1, "x");
+            g.CreateEdges("S,B", "B,T", 5, "y");
+            Assert.True(g.EnableArcFlags("S,A,B;T"));
+            GraphPath before = g.FindShortestPath("S", "T");
+            Assert.Equal("S,A,T", before.VertexNames);
+            foreach (Edge e in before)
+                g.SetEdgeWeight(e, 100);
+            Assert.False(g.FindNextShortestPath().IsValid);  // Query invalidated by the change
+            GraphPath after = g.FindShortestPath("S", "T");
+            Assert.Equal("S,B,T", after.VertexNames);
+            Assert.Equal(10, after.Weight);
+            Assert.Equal(2, before.Weight);  // A path keeps the weight it had when it was found
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => g.SetEdgeWeight(99, 1));
+            Graph other = new Graph();
+            other.CreateVertices("A,B");
+            other.AddEdge(0, 1, 1);
+            Assert.Throws<ArgumentException>(() => g.SetEdgeWeight(other.GetEdge(0), 1));  // Edge of another graph
+        }
+
+        [Fact]
+        public void VertexAndEdge_AreViewsWithValueEquality()
         {
             Graph g = EppsteinExample();
-            g.FindShortestPath("S", "T");
-            Edge first = g.FindShortestPath("S", "T")[0];
-            GraphPath root = new GraphPath();
-            root.Add(first);
-            ST_Node rootNode = new ST_Node(root);
-            ST_Node child = new ST_Node(new ST_Node(rootNode, first), first);
-            Assert.Equal(new[] { first, first, first }, child.Sidetracks);
-            Assert.Equal(3 * first.Delta, child.Weight);
-            Assert.Same(first.Head, child.LastHead);
-            Assert.Null(new ST_Node(new GraphPath()).LastHead);
+            GraphPath p = g.FindShortestPath("S", "T");
+            Vertex s = g.FindVertex("s").Value;
+            Assert.Equal(s, p[0].Tail);
+            Assert.True(s == g.GetVertex(s.Index));
+            Assert.Equal(p[0], g.GetEdge(p[0].Id));
+            Assert.NotEqual(EppsteinExample().GetVertex(s.Index), s);  // Same index, other graph
+            Assert.Null(g.FindVertex("X"));
+            Assert.Equal("S", s.ToString());
+            Assert.Equal("S--13-->D", p[0].ToString());
+
+            Assert.Equal(55, s.Distance);
+            Assert.Equal(p[0], s.TreeEdge);
+            Assert.Equal("D", s.Next.Value.Label);
+            Assert.Null(g.FindVertex("T").Value.Next);
+            Assert.Equal(new[] { "A", "D" }, s.OutEdges.Select(e => e.Head.Label).OrderBy(l => l));
+            Assert.Equal(new[] { "F", "G", "J" }, g.FindVertex("T").Value.InEdges.Select(e => e.Tail.Label).OrderBy(l => l));
+            Assert.Equal(p.Vertices.Select(v => v.Label), p.VertexNames.Split(','));
+
+            s.Tag = "start";
+            Assert.Equal("start", g.GetVertex(s.Index).Tag);
+            Assert.Null(g.FindVertex("A").Value.Tag);
+
+            Assert.Equal(21, g.EdgeCount);
+            Assert.Equal(13, g.Vertices.Count());
+            Assert.Equal(21, g.Edges.Count());
+            Assert.Throws<ArgumentOutOfRangeException>(() => g.GetVertex(13));
+            Assert.Throws<ArgumentOutOfRangeException>(() => g.GetEdge(-1));
+        }
+
+        [Fact]
+        public void NewQuery_DoesNotShowDistancesOfThePreviousQuery()
+        {
+            // Distances are only valid for the current query (no reset of all vertices any more)
+            Graph g = new Graph();
+            g.CreateVertices("S,T,X1,X2");
+            g.CreateEdges("S,X1,X2", "T,S,X1", 10, "g");
+            g.FindShortestPath("X2", "T");
+            Assert.Equal(30, g.FindVertex("X2").Value.Distance);
+            g.MaxDetour = 5;
+            g.FindShortestPath("S", "T");  // Corridor: X1 and X2 are not reached
+            Assert.Equal(10, g.FindVertex("S").Value.Distance);
+            Assert.Equal(Vertex.Unreached, g.FindVertex("X2").Value.Distance);
+            Assert.Null(g.FindVertex("X2").Value.TreeEdge);
+        }
+
+        [Fact]
+        public void EnumeratePaths_WorksWithLinq_AndDetectsChanges()
+        {
+            Graph g = EppsteinExample();
+            List<long> expected = Take(EppsteinExample(), "S", "T", 20).Select(p => p.Weight).ToList();
+            Assert.Equal(expected, g.EnumeratePaths("S", "T").Take(20).Select(p => p.Weight));
+            Assert.Equal(expected, g.EnumeratePathWeights("S", "T").Take(20));
+            Assert.Equal(expected.Take(5), g.EnumeratePathWeights(g.GetVertexIndex("S"), g.GetVertexIndex("T")).Take(5));
+            Assert.Empty(g.EnumeratePaths("S", "X"));
+            Assert.Empty(g.EnumeratePaths("T", "S"));
+
+            g.MaxDetour = 4;
+            Assert.Equal(new long[] { 55, 58, 59 }, g.EnumeratePathWeights("S", "T"));  // Finite with a corridor
+
+            using IEnumerator<GraphPath> paths = g.EnumeratePaths("S", "T").GetEnumerator();
+            Assert.True(paths.MoveNext());
+            g.SetEdgeWeight(0, 3);
+            Assert.Throws<InvalidOperationException>(() => paths.MoveNext());
+
+            using IEnumerator<long> weights = g.EnumeratePathWeights("S", "T").GetEnumerator();
+            Assert.True(weights.MoveNext());
+            g.FindShortestPath("A", "T");  // Another query
+            Assert.Throws<InvalidOperationException>(() => weights.MoveNext());
+        }
+
+        [Fact]
+        public void GraphPath_IsImmutableWithStoredWeight()
+        {
+            Graph g = EppsteinExample();
+            GraphPath p = g.FindShortestPath("S", "T");
+            Assert.IsAssignableFrom<IReadOnlyList<Edge>>(p);
+            Assert.Equal(p.Sum(e => e.Weight), p.Weight);
+            Assert.Equal("S,D,E,F,J,T (55)", p.ToString());
+            Assert.False(GraphPath.Empty.IsValid);
+            Assert.Equal("(empty)", GraphPath.Empty.VertexNames);
+            Assert.Empty(GraphPath.Empty.Vertices);
         }
 
         [Theory]
@@ -395,16 +532,16 @@ namespace Eppstein2.Tests
             Assert.Equal(-1, g.AddVertex("1A"));    // Invalid labels
             Assert.Equal(-1, g.AddVertex("A-B"));
             Assert.Equal(-1, g.AddVertex(""));
-            Assert.Equal(-1, g.AddVertex(null));
+            Assert.Throws<ArgumentNullException>(() => g.AddVertex(null));
             Assert.Equal(-1, g.GetVertexIndex("X"));
             Assert.Equal(-1, g.GetVertexIndex(null));
             Assert.Equal(3, g.VertexCount);
 
-            Assert.True(g.AddEdge(0, 2, 4));
-            Assert.True(g.AddEdge(0, 1, 1, "fast"));
-            Assert.True(g.AddEdge(1, 2, 1, null));
-            Assert.False(g.AddEdge(0, 3, 1));
-            Assert.False(g.AddEdge(-1, 0, 1));
+            Assert.Equal(0, g.AddEdge(0, 2, 4));  // Returns the edge number
+            Assert.Equal(1, g.AddEdge(0, 1, 1, "fast"));
+            Assert.Equal(2, g.AddEdge(1, 2, 1, null));
+            Assert.Equal(-1, g.AddEdge(0, 3, 1));
+            Assert.Equal(-1, g.AddEdge(-1, 0, 1));
             Assert.True(g.CreateEdges("HOME", "a", 2, "x"));  // String and index methods mix
 
             Assert.Equal("A,B,HOME", g.FindShortestPath(0, 2).VertexNames);

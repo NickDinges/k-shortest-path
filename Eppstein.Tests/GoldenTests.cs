@@ -6,7 +6,7 @@ using System.Text.Json;
 using Eppstein;
 using Xunit;
 
-namespace Eppstein2.Tests
+namespace Eppstein.Tests
 {
     /// <summary>
     /// Shared golden test data in testdata/golden, checked by the C# and the Go test suites, so both

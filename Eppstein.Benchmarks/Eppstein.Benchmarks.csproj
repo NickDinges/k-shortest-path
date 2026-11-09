@@ -7,6 +7,6 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../Eppstein2/Eppstein2.csproj" />
+    <ProjectReference Include="../Eppstein/Eppstein.csproj" />
   </ItemGroup>
 </Project>

@@ -42,8 +42,8 @@ class Benchmark
         Console.WriteLine((local ? "Local query (nearby vertices in the middle of the grid)" : "Corner to corner") +
             (double.IsPositiveInfinity(ratio) ? "" : ", MaxDetourRatio = " + ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)) +
             ", build: " + build);
-        Console.WriteLine("| grid | vertices | edges | build graph | first path | first path (repeated query) | next paths | paths found | weight of last path |");
-        Console.WriteLine("|---|---|---|---|---|---|---|---|---|");
+        Console.WriteLine("| grid | vertices | edges | build graph | memory | first path | first path (repeated query) | next paths | paths found | weight of last path |");
+        Console.WriteLine("|---|---|---|---|---|---|---|---|---|---|");
         foreach (int size in sizes)
             Run(size, k, local, ratio, build);
     }
@@ -77,6 +77,7 @@ class Benchmark
             dimacs = text.ToString();
         }
 
+        long memoryBefore = GC.GetTotalMemory(true);
         Stopwatch watch = Stopwatch.StartNew();
         Graph g = new Graph();
         switch (build)
@@ -107,6 +108,8 @@ class Benchmark
         GraphPath p = g.FindShortestPath(from * size + from, to * size + to);
         double first = watch.Elapsed.TotalMilliseconds;
 
+        double memory = (GC.GetTotalMemory(true) - memoryBefore) / 1e6;  // Graph with one query, in MB
+
         // Same query again: without one-time work after a graph change (e.g. arc flags, edge arrays)
         watch.Restart();
         p = g.FindShortestPath(from * size + from, to * size + to);
@@ -126,7 +129,7 @@ class Benchmark
         }
         double next = watch.Elapsed.TotalMilliseconds;
 
-        Console.WriteLine("| " + size + "x" + size + " | " + size * size + " | " + edges + " | " + buildTime.ToString("F0") + " ms | " +
+        Console.WriteLine("| " + size + "x" + size + " | " + size * size + " | " + edges + " | " + buildTime.ToString("F0") + " ms | " + memory.ToString("F0") + " MB | " +
             first.ToString("F0") + " ms | " + repeated.ToString("F0") + " ms | " + next.ToString("F0") + " ms | " + found + " | " + last.Weight + " |");
     }
 }
