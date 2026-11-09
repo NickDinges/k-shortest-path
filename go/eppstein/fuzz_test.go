@@ -129,8 +129,13 @@ func FuzzKShortestPaths(f *testing.F) {
 		if options&8 != 0 { // corridor
 			g.SetMaxDetour(int64(options/16) % 10)
 		}
+		simple := options&4 != 0 // only simple paths (Yen)
+		g.SetSimplePathsOnly(simple)
 
 		expected, ok := boundedWalkWeights(edges, s, target, limit, 200000)
+		if simple {
+			expected, ok = simplePathWeights(n, edges, s, target), true
+		}
 		if !ok || len(expected) > 5000 {
 			return // too many walks: keep every fuzz input fast
 		}
@@ -148,7 +153,10 @@ func FuzzKShortestPaths(f *testing.F) {
 		var actual []int64
 		for p := range g.PathsByIndex(s, target) {
 			assertValidPath(t, p, labels[s], labels[target])
-			if p.Weight() > limit {
+			if simple && !isSimplePath(p) {
+				t.Fatalf("path %s repeats a vertex", p)
+			}
+			if !simple && p.Weight() > limit {
 				break
 			}
 			actual = append(actual, p.Weight())
@@ -160,6 +168,42 @@ func FuzzKShortestPaths(f *testing.F) {
 			t.Fatalf("weights %v, want %v (n=%d, edges=%v, s=%d, t=%d, options=%d)", actual, expected, n, edges, s, target, options)
 		}
 	})
+}
+
+// simplePathWeights returns the sorted weights of all simple s-t paths (depth-first search).
+func simplePathWeights(n int, edges []testEdge, s, t int) []int64 {
+	var weights []int64
+	visited := make([]bool, n)
+	var visit func(v int, weight int64)
+	visit = func(v int, weight int64) {
+		if v == t {
+			weights = append(weights, weight)
+			return
+		}
+		visited[v] = true
+		for _, e := range edges {
+			if e.from == v && e.weight >= 0 && !visited[e.to] {
+				visit(e.to, weight+e.weight)
+			}
+		}
+		visited[v] = false
+	}
+	if s != t {
+		visit(s, 0)
+	}
+	slices.Sort(weights)
+	return weights
+}
+
+func isSimplePath(p Path) bool {
+	seen := map[int]bool{}
+	for v := range p.Vertices() {
+		if seen[v.Index()] {
+			return false
+		}
+		seen[v.Index()] = true
+	}
+	return true
 }
 
 // boundedWalkWeights returns the sorted weights of all s-t walks up to maxWeight, or ok=false if

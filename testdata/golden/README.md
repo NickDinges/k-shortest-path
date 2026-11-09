@@ -11,7 +11,11 @@ the same results.
   `complete: false`: these are all paths up to the weight of the last one; more paths follow.
 - Paths of equal weight may come in any order; the tests compare them as sets.
 
-The expected paths were generated with the implementation of commit `a39d887` (C# and Go agreed on
+Cases with `simplePathsOnly: true` expect only simple paths (no repeated vertex). Their expected
+paths come from `generate_simple_paths.py`, a brute-force enumeration of all simple paths that is
+independent of the library (`python3 generate_simple_paths.py` regenerates them).
+
+The expected walks (cases without `simplePathsOnly`) were generated with the implementation of commit `a39d887` (C# and Go agreed on
 all of them; both were also checked against brute-force enumeration). If a change makes a golden
 test fail, the change is wrong, not the data, unless the meaning of the algorithm changes on
 purpose.

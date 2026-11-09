@@ -135,11 +135,8 @@ public sealed partial class Graph
     /// </remarks>
     /// <returns>The next path; empty if there are no more, or if the graph or the query settings
     /// changed since FindShortestPath.</returns>
-    public GraphPath FindNextShortestPath()
-    {
-        Candidate? candidate = NextCandidate();
-        return candidate == null ? GraphPath.Empty : BuildPath(candidate);
-    }
+    public GraphPath FindNextShortestPath() =>
+        TryNextResult(buildPath: true, out GraphPath? path, out _) ? path! : GraphPath.Empty;
 
     /// <summary>
     /// All paths from <paramref name="start"/> to <paramref name="goal"/> in order of weight, for use
@@ -163,8 +160,8 @@ public sealed partial class Graph
     /// </summary>
     public IEnumerable<GraphPath> EnumeratePaths(int start, int goal)
     {
-        foreach (Candidate candidate in EnumerateCandidates(start, goal))
-            yield return BuildPath(candidate);
+        foreach ((GraphPath? path, long _) in EnumerateResults(start, goal, buildPaths: true))
+            yield return path!;
     }
 
     /// <summary>
@@ -184,11 +181,36 @@ public sealed partial class Graph
     /// </summary>
     public IEnumerable<long> EnumeratePathWeights(int start, int goal)
     {
-        foreach (Candidate candidate in EnumerateCandidates(start, goal))
-            yield return distance[source] + candidate.Weight;
+        foreach ((GraphPath? _, long weight) in EnumerateResults(start, goal, buildPaths: false))
+            yield return weight;
     }
 
-    private IEnumerable<Candidate> EnumerateCandidates(int start, int goal)
+    /// <summary>
+    /// Next path of the current query, from Eppstein's enumeration or, with
+    /// <see cref="SimplePathsOnly"/>, from Yen's algorithm.
+    /// </summary>
+    /// <param name="buildPath">False if only the weight is needed (Eppstein then skips building the path).</param>
+    /// <param name="path">The path, or null if not built.</param>
+    /// <param name="weight">Total weight of the path.</param>
+    /// <returns>False if there are no more paths or there is no current query.</returns>
+    private bool TryNextResult(bool buildPath, out GraphPath? path, out long weight)
+    {
+        if (simplePathsOnly)
+            return TryNextSimplePath(out path, out weight);
+
+        Candidate? candidate = NextCandidate();
+        if (candidate == null)
+        {
+            path = null;
+            weight = 0;
+            return false;
+        }
+        weight = distance[source] + candidate.Weight;
+        path = buildPath ? BuildPath(candidate) : null;
+        return true;
+    }
+
+    private IEnumerable<(GraphPath? Path, long Weight)> EnumerateResults(int start, int goal, bool buildPaths)
     {
         if (!StartQuery(start, goal))
             yield break;
@@ -199,10 +221,9 @@ public sealed partial class Graph
             if (query != queryStamp || changes != changeCount)
                 throw new InvalidOperationException(
                     "The graph was changed or another query was started during the enumeration of paths.");
-            Candidate? candidate = NextCandidate();
-            if (candidate == null)
+            if (!TryNextResult(buildPaths, out GraphPath? path, out long weight))
                 yield break;
-            yield return candidate;
+            yield return (path, weight);
         }
     }
     #endregion
@@ -259,7 +280,10 @@ public sealed partial class Graph
         candidateSequence = 0;
         CandidatesCreated = 0;
         // No paths if the goal cannot be reached, or start and goal are the same vertex
-        if (stamp[source] == queryStamp && source != target)
+        bool anyPath = stamp[source] == queryStamp && source != target;
+        if (simplePathsOnly)
+            StartSimplePaths(anyPath);
+        else if (anyPath)
         {
             candidates.Enqueue(Candidate.Root, (0, candidateSequence++));
             CandidatesCreated = 1;

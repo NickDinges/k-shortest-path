@@ -5,7 +5,7 @@ using Eppstein;
 
 /// <summary>
 /// Simple timing benchmark on grid graphs (run in Release mode):
-///   dotnet run -c Release --project Eppstein2.Benchmarks -- [size...] [--k N] [--local] [--ratio R] [--build strings|index|dimacs]
+///   dotnet run -c Release --project Eppstein2.Benchmarks -- [size...] [--k N] [--local] [--ratio R] [--build strings|index|dimacs] [--two-way] [--simple]
 /// --build chooses how the graph is built: CreateVertices/CreateEdges with labels (strings, default),
 /// AddVertex/AddEdge by index (index), or ImportDimacs from a DIMACS text in memory (dimacs).
 /// --ratio R limits paths to at most R times longer than the shortest one (MaxDetourRatio, corridor).
@@ -20,6 +20,8 @@ class Benchmark
     {
         int k = 10000;
         bool local = false;
+        bool twoWay = false;
+        bool simple = false;
         double ratio = double.PositiveInfinity;
         string build = "strings";
         var sizes = new System.Collections.Generic.List<int>();
@@ -29,6 +31,10 @@ class Benchmark
                 k = int.Parse(args[++i]);
             else if (args[i] == "--local")
                 local = true;
+            else if (args[i] == "--two-way")
+                twoWay = true;
+            else if (args[i] == "--simple")
+                simple = true;
             else if (args[i] == "--build" && i + 1 < args.Length)
                 build = args[++i];
             else if (args[i] == "--ratio" && i + 1 < args.Length)
@@ -41,14 +47,14 @@ class Benchmark
 
         Console.WriteLine((local ? "Local query (nearby vertices in the middle of the grid)" : "Corner to corner") +
             (double.IsPositiveInfinity(ratio) ? "" : ", MaxDetourRatio = " + ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)) +
-            ", build: " + build);
+            ", build: " + build + (twoWay ? ", two-way streets" : "") + (simple ? ", SimplePathsOnly" : ""));
         Console.WriteLine("| grid | vertices | edges | build graph | memory | first path | first path (repeated query) | next paths | paths found | weight of last path |");
         Console.WriteLine("|---|---|---|---|---|---|---|---|---|---|");
         foreach (int size in sizes)
-            Run(size, k, local, ratio, build);
+            Run(size, k, local, ratio, build, twoWay, simple);
     }
 
-    static void Run(int size, int k, bool local, double ratio, string build)
+    static void Run(int size, int k, bool local, double ratio, string build, bool twoWay, bool simple)
     {
         // Edge list (vertex index = y * size + x), prepared before timing
         Random rnd = new Random(1);
@@ -62,6 +68,13 @@ class Benchmark
                 if (y + 1 < size) edgeList.Add((v, v + size, rnd.Next(1, 101)));
                 if (x > 0 && v % 10 == 0) edgeList.Add((v, v - 1, rnd.Next(1, 101)));
             }
+        }
+        if (twoWay)  // Every street in both directions (the back edges of the one-way grid are dropped)
+        {
+            var oneWay = edgeList.FindAll(e => e.Head > e.Tail);
+            edgeList = new System.Collections.Generic.List<(int Tail, int Head, int Weight)>(oneWay);
+            foreach (var e in oneWay)
+                edgeList.Add((e.Head, e.Tail, e.Weight));
         }
         int edges = edgeList.Count;
         string[] labels = new string[size * size];
@@ -103,6 +116,7 @@ class Benchmark
 
         watch.Restart();
         g.MaxDetourRatio = ratio;
+        g.SimplePathsOnly = simple;
         int from = local ? size / 2 : 0;
         int to = local ? size / 2 + Math.Max(size / 20, 1) : size - 1;
         GraphPath p = g.FindShortestPath(from * size + from, to * size + to);

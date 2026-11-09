@@ -21,12 +21,13 @@ blue and green. The number under each letter is the distance from that point to 
 5. [API reference](#5-api-reference)
 6. [Drawing your graph (Graphviz)](#6-drawing-your-graph-graphviz)
 7. [Things to know (common pitfalls)](#7-things-to-know-common-pitfalls)
-8. [Faster queries: corridor and arc flags](#8-faster-queries-corridor-and-arc-flags)
-9. [How the algorithm works](#9-how-the-algorithm-works)
-10. [Performance](#10-performance)
-11. [Project layout and tests](#11-project-layout-and-tests)
-12. [Upgrading from version 1](#12-upgrading-from-version-1)
-13. [Further reading](#13-further-reading)
+8. [Routes without loops: `SimplePathsOnly`](#8-routes-without-loops-simplepathsonly)
+9. [Faster queries: corridor and arc flags](#9-faster-queries-corridor-and-arc-flags)
+10. [How the algorithm works](#10-how-the-algorithm-works)
+11. [Performance](#11-performance)
+12. [Project layout and tests](#12-project-layout-and-tests)
+13. [Upgrading from version 1](#13-upgrading-from-version-1)
+14. [Further reading](#14-further-reading)
 
 ---
 
@@ -178,6 +179,7 @@ That's it. The pattern is always the same:
 | **Path** (route) | A chain of edges from the start to the goal. | `GraphPath` |
 | **Path weight** | The sum of all edge weights in the path. "Shortest" means "smallest total weight". | `GraphPath.Weight` |
 | **k shortest paths** | The best path, the 2nd best, …, the k-th best. | `FindShortestPath` + `FindNextShortestPath` |
+| **Simple path** | A path that visits no vertex twice (no loops). By default paths *may* repeat vertices. | `SimplePathsOnly` (section 8) |
 
 ## 5. API reference
 
@@ -295,8 +297,9 @@ or edge. That way the graph always knows when its prepared data is outdated.
 | Method | What it does | Section |
 |---|---|---|
 | `Serialize(...)` | Produces a Graphviz drawing of the graph. | [6](#6-drawing-your-graph-graphviz) |
-| `MaxDetour`, `MaxDetourRatio` | Only paths at most this much longer than the shortest one (much faster on large graphs). | [8](#8-faster-queries-corridor-and-arc-flags) |
-| `EnableArcFlags(...)`, `DisableArcFlags()`, `PrecomputeArcFlags()`, `ArcFlagsEnabled`, `ArcFlagsRegionCount` | Optional speed-up for many queries. | [8](#8-faster-queries-corridor-and-arc-flags) |
+| `SimplePathsOnly` | Only routes that visit no vertex twice (no loops); Yen's algorithm. | [8](#8-routes-without-loops-simplepathsonly) |
+| `MaxDetour`, `MaxDetourRatio` | Only paths at most this much longer than the shortest one (much faster on large graphs). | [9](#9-faster-queries-corridor-and-arc-flags) |
+| `EnableArcFlags(...)`, `EnableArcFlagsFromPartition(reader)`, `WriteMetisGraph(writer)`, `DisableArcFlags()`, `PrecomputeArcFlags()`, `ArcFlagsEnabled`, `ArcFlagsRegionCount` | Optional speed-up for many queries, also with regions from an external partitioner. | [9](#9-faster-queries-corridor-and-arc-flags) |
 
 ## 6. Drawing your graph (Graphviz)
 
@@ -338,8 +341,8 @@ dotnet run --project Eppstein.Demo -- 5 --dot graph.dot
   - **bold** arrows are the shortest-path tree (from every vertex, the best next step towards the
     goal).
 - **Dashed** arrows have a negative weight, so they are switched off (see section 7).
-- If arc flags are on, each region is drawn as a dashed box (see section 8).
-- With a corridor (section 8), vertices outside of it show no distance: they were not needed.
+- If arc flags are on, each region is drawn as a dashed box (see section 9).
+- With a corridor (section 9), vertices outside of it show no distance: they were not needed.
 
 ## 7. Things to know (common pitfalls)
 
@@ -353,8 +356,9 @@ for (int i = 0; i < 10 && p.IsValid; i++) { ... }   // good: at most 10 paths
 while (p.IsValid) { ... }                            // may never end on a graph with cycles
 ```
 
-Alternatively, set a corridor (`MaxDetour` or `MaxDetourRatio`, section 8): then the number of
-paths is finite and the `while` loop ends by itself.
+Alternatively, set a corridor (`MaxDetour` or `MaxDetourRatio`, section 9): then the number of
+paths is finite and the `while` loop ends by itself. If you want routes **without** such loops
+at all, use `SimplePathsOnly` (section 8).
 
 **2. An empty path means "no path".** `FindShortestPath` returns an empty path
 (`IsValid == false`) when:
@@ -388,7 +392,7 @@ between versions of the library (and between the C# and the Go version).
 **7. Paths are `GraphPath`, not `Path`.** In older versions the class was called `Path`. That
 clashed with .NET's own `System.IO.Path` (for file paths), which new projects import
 automatically, and caused the error *"'Path' is an ambiguous reference"*. If you upgrade, see
-[Upgrading from version 1](#12-upgrading-from-version-1).
+[Upgrading from version 1](#13-upgrading-from-version-1).
 
 **8. Weights are `long`, not `int`.** Weights and distances are 64-bit numbers, so very large
 weights (for example distances in millimeters) work. Passing an `int` is fine
@@ -409,7 +413,89 @@ because names must start with a letter). Mistakes in the program itself throw an
 
 **10. One graph, one thread.** A graph is not thread-safe. Use a separate graph per thread.
 
-## 8. Faster queries: corridor and arc flags
+## 8. Routes without loops: `SimplePathsOnly`
+
+### The problem: paths with loops
+
+By default the library returns the k shortest **walks**: a path may visit the same vertex more than
+once. That is what Eppstein's algorithm computes, and it is very fast. But in networks where
+connections go **both ways** (roads, computer networks, pipes, game maps) most of these walks are
+useless as alternatives. Here is the road network from section 3, with every road in both
+directions:
+
+| # | Default (walks, Eppstein) | Minutes | | `SimplePathsOnly = true` (Yen) | Minutes |
+|---|---|---|---|---|---|
+| 1 | HOME → PARK → BAKERY → STATION → OFFICE | 6 | | HOME → PARK → BAKERY → STATION → OFFICE | 6 |
+| 2 | HOME → BAKERY → STATION → OFFICE | 7 | | HOME → BAKERY → STATION → OFFICE | 7 |
+| 3 | HOME → PARK → BAKERY → STATION → OFFICE → **STATION → OFFICE** | 8 | | HOME → PARK → BAKERY → OFFICE | 9 |
+| 4 | HOME → PARK → BAKERY → **PARK → BAKERY** → STATION → OFFICE | 8 | | HOME → BAKERY → OFFICE | 10 |
+| 5 | HOME → BAKERY → STATION → OFFICE → **STATION → OFFICE** | 9 | | HOME → PARK → STATION → OFFICE | 10 |
+| 6 | HOME → PARK → BAKERY → OFFICE | 9 | | HOME → BAKERY → PARK → STATION → OFFICE | 13 |
+| 7 | HOME → BAKERY → **PARK → BAKERY** → STATION → OFFICE | 9 | | HOME → PARK → STATION → BAKERY → OFFICE | 17 |
+| 8 | HOME → PARK → **HOME → PARK** → BAKERY → STATION → OFFICE | 10 | | *(no more: these are all 7 routes)* | |
+
+On the left, every path from number 3 on is "the best route plus a detour back and forth". They
+are correct shortest *walks*, but nobody would drive them. On the right are the **simple paths**:
+paths that never visit a vertex twice. They are what people mean by "alternative routes".
+
+The bigger the network, the worse it gets: in a 30×30 grid of two-way streets, only 74 of the
+first 10,000 walks are simple. Filtering the walks afterwards is therefore no solution.
+
+### How to use it
+
+```csharp
+g.SimplePathsOnly = true;   // default: false (walks)
+
+foreach (GraphPath route in g.EnumeratePaths("HOME", "OFFICE").Take(3))
+    Console.WriteLine(route);   // the 3 best routes without loops
+```
+
+Everything else works as before: `FindShortestPath`, `FindNextShortestPath`, `EnumeratePaths`,
+the corridor (`MaxDetour`, `MaxDetourRatio`) and the Graphviz output. After changing the setting,
+call `FindShortestPath` (or start a new `EnumeratePaths`) again. In Go:
+`g.SetSimplePathsOnly(true)`.
+
+### Which mode should I use?
+
+| Situation | Use |
+|---|---|
+| Connections go both ways (roads, networks, maps) and you want alternative routes | **`SimplePathsOnly = true`** |
+| The graph has no cycles (e.g. schedules, dependency graphs, speech or sequence lattices) | Default: both modes give the same paths, the default is much faster |
+| Repeating a vertex is meaningful (e.g. a state machine that may stay in a state) | Default |
+| You need thousands of paths and loops do not matter | Default |
+
+### What it costs
+
+Simple paths are much harder to find than walks:
+
+- **Walks (default):** one shortest-path search in total; after that every further path costs
+  almost nothing.
+- **Simple paths:** every further path needs several shortest-path searches (one for each
+  possible place where a new route can branch off). They are fast because they are guided by the
+  distances to the goal (see section 10), but they add up.
+
+Measured on two-way grid streets with 1 million vertices, between two nearby points
+(details in section 11):
+
+| | Without corridor | With `MaxDetourRatio = 0.1` |
+|---|---|---|
+| Shortest route (repeated query) | 371 ms | 6 ms |
+| + 2 alternatives | + 7 ms | + 6 ms |
+| + 9 alternatives | + 13 ms | + 18 ms |
+
+**Tips:**
+
+- **Combine it with a corridor** (`MaxDetourRatio`, section 9). It limits the first search to the
+  area around the route, and the branching searches stop as soon as no allowed route is possible.
+  In practice you rarely want an alternative that is twice as long anyway.
+- **Ask only for what you need** (`Take(3)`): the searches for the next route only run when you
+  ask for it. The first route costs nothing extra.
+- The number of simple paths is finite, so a loop over `EnumeratePaths` ends by itself. But it can
+  be astronomically large in big networks, so still use `Take` or a corridor.
+- `EnumeratePathWeights` is not faster than `EnumeratePaths` in this mode (the paths are built
+  anyway), and arc flags only speed up the first search.
+
+## 9. Faster queries: corridor and arc flags
 
 Both are optional. The results never change, except that the corridor deliberately leaves out
 paths that are too long.
@@ -433,7 +519,7 @@ Good to know:
 
 - **Big speed-up on large graphs**, when start and goal are close to each other: the search only
   covers the area around the goal that is reachable within "shortest + detour". In a network
-  with 1 million vertices, a repeated local query takes 3 ms instead of 78 ms (see section 10).
+  with 1 million vertices, a repeated local query takes 3 ms instead of 78 ms (see section 11).
 - The number of paths within the limit is finite, so a loop over `EnumeratePaths` (or
   `while (p.IsValid)` with `FindNextShortestPath`) ends by itself, even with cycles.
 - If you set both, the **smaller** limit applies.
@@ -476,6 +562,50 @@ Good to know:
 - The preparation costs time. It pays off only if you run **many** queries on the same graph.
 - `g.DisableArcFlags()` switches the feature off again.
 
+#### Better regions with an external partitioner
+
+The built-in partition (`EnableArcFlags(3)`) simply cuts a breadth-first ordering into pieces. Good
+regions have **few edges between them**; specialised graph partitioners find such regions. The
+library can hand its graph to one and read the result back:
+
+```csharp
+using (var file = new StreamWriter("graph.metis"))
+    g.WriteMetisGraph(file);                       // 1. graph in METIS format
+
+// 2. run a partitioner, e.g. mt-KaHyPar (below), KaHIP or METIS
+
+using (var file = new StreamReader("graph.part"))
+    g.EnableArcFlagsFromPartition(file);           // 3. one region number per vertex
+```
+
+With [mt-KaHyPar](https://github.com/kahypar/mt-kahypar) from Python (`pip install mtkahypar`):
+
+```python
+import mtkahypar
+init = mtkahypar.initialize(4)                                    # 4 threads
+ctx = init.context_from_preset(mtkahypar.PresetType.DEFAULT)
+ctx.set_partitioning_parameters(16, 0.03, mtkahypar.Objective.CUT)  # 16 regions, 3% imbalance
+graph = init.graph_from_file("graph.metis", ctx, mtkahypar.FileFormat.METIS)
+graph.partition(ctx).write_partition_to_file("graph.part")
+```
+
+`WriteMetisGraph` writes the graph undirected (METIS needs that), without self-loops, duplicate
+and switched-off edges. The partition file has one line per vertex, in the order of the vertex
+indices. If vertices are added later, arc flags switch off on the next query.
+
+Measured on two-way grid streets with 40,000 vertices (results identical in all cases):
+
+| Regions | Partition | Edges between regions | Preparation | Query (without arc flags) |
+|---|---|---|---|---|
+| 4 | built-in | 1,920 | 10.1 s | 7.3 ms (8.6 ms) |
+| 4 | mt-KaHyPar | 918 | 9.0 s | 7.1 ms (8.6 ms) |
+| 16 | built-in | 8,384 | 43.8 s | 8.8 ms (10.7 ms) |
+| 16 | mt-KaHyPar | 2,736 | 26.1 s | 6.8 ms (8.5 ms) |
+
+A good partition makes the preparation up to 1.7 times faster. The query gains about 20% either
+way: as explained above, Eppstein's algorithm needs every distance, so arc flags can only skip
+edge checks.
+
 <details>
 <summary>Technical details</summary>
 
@@ -486,7 +616,7 @@ Every shortest path `u → t` uses only such arcs, so all distances stay exact.
 
 </details>
 
-## 9. How the algorithm works
+## 10. How the algorithm works
 
 You don't need this to use the library, but here's the intuition.
 
@@ -514,7 +644,41 @@ You don't need this to use the library, but here's the intuition.
    paths come out in the right order. Only what is needed is computed, which is why graphs with
    cycles work. This is the core idea of Eppstein's paper.
 
-## 10. Performance
+### Simple paths (`SimplePathsOnly`): Yen and Lawler
+
+Detours as above cannot forbid loops: a detour may lead back to a vertex the path already visited.
+For simple paths the library uses **Yen's algorithm** (1971) with **Lawler's improvement** (1972):
+
+1. **The first route** is the shortest path (it follows the tree, so it has no loops).
+2. **Branching off.** Take the route found last. For each of its vertices `v`, keep the route up
+   to `v` (the *root*) and search the best way from `v` to the goal (the *spur*) that
+   - does not use the root's vertices again (otherwise the route would have a loop), and
+   - does not leave `v` along an edge that an already found route with the same root uses
+     (otherwise we would find that route again).
+
+   Root + spur is a *candidate* for a later route.
+3. **Best first.** All candidates wait in a priority queue sorted by length. The shortest one is the
+   next route; then step 2 runs for it.
+
+Example: the first route is `HOME → PARK → BAKERY → STATION → OFFICE`. Branching off at `BAKERY`
+(root `HOME → PARK → BAKERY`, edge to `STATION` blocked, `HOME` and `PARK` not allowed) gives the
+spur `BAKERY → OFFICE`, so the candidate `HOME → PARK → BAKERY → OFFICE` (9 minutes), the third route.
+
+**Lawler's improvement:** a route that was created by branching off at its *i*-th vertex has the
+same root as its parent up to there, and all branchings before that point were already tried for
+the parent. So step 2 only has to start at the *i*-th vertex. That saves most of the searches.
+
+**Making the searches fast.** Each spur is a shortest-path search with some vertices and edges
+forbidden. Forbidding things only makes ways longer, so the distances to the goal that the first
+search computed (step 1 of Eppstein above) are *lower bounds* for every spur. The library uses them
+for an [A\* search](https://en.wikipedia.org/wiki/A*_search_algorithm): it always continues with
+the vertex whose "distance so far + known distance to the goal" is smallest, and so goes almost
+straight towards the goal instead of searching in all directions. With a corridor, a search stops
+as soon as even this lower bound exceeds the allowed length. The found routes are kept in a
+prefix tree (*trie*), which answers "which edges do routes with this root use?" directly, and a
+spur search only runs when the next route is requested.
+
+## 11. Performance
 
 The library handles graphs with millions of edges. Measured on grid graphs (each vertex connected
 to its right and lower neighbor, every 10th vertex also back to the left, random weights 1–100),
@@ -539,7 +703,7 @@ in Release mode on a 4-core cloud VM.
 | `ImportDimacs` (from text in memory) | 0.7 s |
 
 **Between two nearby vertices** in the middle of the 1,000,000-vertex grid, with and without a
-corridor (section 8):
+corridor (section 9):
 
 | Corridor | First path | First path, repeated query | Next paths | Paths found |
 |---|---|---|---|---|
@@ -549,6 +713,22 @@ corridor (section 8):
 
 The first query after building or changing the graph includes one-time preparation (sorting the
 edges by direction); the "repeated query" column shows a query without it.
+
+**Simple paths** (`SimplePathsOnly`, section 8) on the same grids with **two-way streets**, from
+corner to corner, time for the routes after the first one:
+
+| Vertices | Edges | 10 routes | 100 routes | 1,000 routes | Walks (default), 1,000 paths |
+|---|---|---|---|---|---|
+| 10,000 | 39,600 | 103 ms | 491 ms | 1.5 s | 5 ms |
+| 40,000 | 159,200 | 124 ms | 431 ms | 3.5 s | 12 ms |
+
+Between two nearby points of the two-way grid with 1,000,000 vertices:
+
+| Routes | Without corridor: first route (repeated query) + further routes | With `MaxDetourRatio = 0.1` |
+|---|---|---|
+| 3 | 371 ms + 7 ms | 6 ms + 6 ms |
+| 10 | 459 ms + 13 ms | 18 ms + 18 ms |
+| 100 | 367 ms + 73 ms | 19 ms + 104 ms |
 
 What makes it fast:
 
@@ -561,21 +741,25 @@ What makes it fast:
 - **Vertex lookup by name** uses a dictionary; building by index (`AddVertex`/`AddEdge`) skips the
   name lookup completely.
 - **Priority queues** are binary heaps (O(log n) per operation).
-- **At most three candidates per path**, thanks to the persistent detour heaps (section 9).
+- **At most three candidates per path**, thanks to the persistent detour heaps (section 10).
   Candidates store only their parent and one detour, not a copy of all detours.
 - **The corridor** stops the shortest-path search where no allowed path can lie.
+- **Simple paths:** Lawler's rule saves most branch searches, and the remaining ones run as A*
+  towards the goal, guided by the distances that are already known (section 10).
 - **Edges are stored by direction**, so the searches never look at edges going the wrong way.
 
 Run the benchmark yourself (sizes are grid widths; `--k` = number of paths, `--local` = nearby
-vertices, `--ratio` = `MaxDetourRatio`, `--build strings|index|dimacs` = way of building):
+vertices, `--ratio` = `MaxDetourRatio`, `--build strings|index|dimacs` = way of building,
+`--two-way` = every street in both directions, `--simple` = `SimplePathsOnly`):
 
 ```sh
 dotnet run -c Release --project Eppstein.Benchmarks -- 50 100 200 --k 10000
 dotnet run -c Release --project Eppstein.Benchmarks -- 1000 --local --ratio 0.1
 dotnet run -c Release --project Eppstein.Benchmarks -- 1000 --build index
+dotnet run -c Release --project Eppstein.Benchmarks -- 100 200 --two-way --simple --k 100
 ```
 
-## 11. Project layout and tests
+## 12. Project layout and tests
 
 | Folder / file | Content |
 |---|---|
@@ -587,12 +771,13 @@ dotnet run -c Release --project Eppstein.Benchmarks -- 1000 --build index
 | `Eppstein/Graph.Serialize.cs` | Graphviz (DOT) output |
 | `Eppstein/Vertex.cs`, `Edge.cs`, `GraphPath.cs` | The public value types |
 | `Eppstein/SidetrackHeap.cs` | Persistent heap of detours (Eppstein's path enumeration) |
+| `Eppstein/Graph.SimplePaths.cs` | Simple paths: Yen's algorithm with Lawler's improvement and A* |
 | `Eppstein.Demo/` | Demo program (`dotnet run --project Eppstein.Demo -- [k] [--dot file]`) |
 | `Eppstein.Tests/` | Automated tests (xUnit) |
-| `Eppstein.Benchmarks/` | Timing benchmark (see section 10) |
+| `Eppstein.Benchmarks/` | Timing benchmark (see section 11) |
 | `testdata/golden/` | Graphs with expected paths, checked by the C# **and** the Go tests |
 | `.github/workflows/ci.yml` | CI: build, tests and a benchmark comparison for every pull request |
-| `docs/` | Images used in this README |
+| `docs/` | Images used in this README, and [an assessment of contraction hierarchies for this library](docs/research-ch-and-k-shortest-paths.md) |
 | `go/` | Go port of the library ([own README](go/README.md)) |
 
 ```sh
@@ -628,7 +813,7 @@ Measure the coverage yourself:
 dotnet test Eppstein.sln --collect:"XPlat Code Coverage"
 ```
 
-## 12. Upgrading from version 1
+## 13. Upgrading from version 1
 
 Version 2 changed the interface. What to change in your code:
 
@@ -647,13 +832,17 @@ Version 2 changed the interface. What to change in your code:
 | `SP_Node`, `ST_Node`, `PriorityQueue<T>` | removed (internal details) |
 | loop with `FindNextShortestPath` | still works; `EnumeratePaths` is shorter |
 
-## 13. Further reading
+## 14. Further reading
 
 - David Eppstein, *Finding the k Shortest Paths*, SIAM Journal on Computing, 1998:
   [paper (PDF)](http://www.ics.uci.edu/~eppstein/pubs/Epp-SJC-98.pdf).
   The algorithm finds the k shortest paths, allowing repeated vertices and edges. After one
   shortest-path computation it needs only constant time per path. It is widely cited in route
   planning, network routing, computational linguistics and bioinformatics.
-- [K shortest path routing](https://en.wikipedia.org/wiki/K_shortest_path_routing) on Wikipedia,
-  including variants that only allow paths without repeated vertices (Yen's algorithm).
+- Jin Y. Yen, *Finding the k shortest loopless paths in a network*, Management Science, 1971, and
+  Eugene L. Lawler, *A procedure for computing the k best solutions to discrete optimization
+  problems and its application to the shortest path problem*, Management Science, 1972: the
+  algorithm behind `SimplePathsOnly`.
+- [K shortest path routing](https://en.wikipedia.org/wiki/K_shortest_path_routing) and
+  [Yen's algorithm](https://en.wikipedia.org/wiki/Yen%27s_algorithm) on Wikipedia.
 - [Graphviz documentation](https://graphviz.org/documentation/).

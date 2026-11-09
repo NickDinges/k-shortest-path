@@ -18,14 +18,15 @@ type goldenPath struct {
 }
 
 type goldenCase struct {
-	Name           string       `json:"name"`
-	Graph          string       `json:"graph"`
-	From           string       `json:"from"`
-	To             string       `json:"to"`
-	MaxDetour      *int64       `json:"maxDetour"`
-	MaxDetourRatio *float64     `json:"maxDetourRatio"`
-	Complete       bool         `json:"complete"`
-	Paths          []goldenPath `json:"paths"`
+	Name            string       `json:"name"`
+	Graph           string       `json:"graph"`
+	From            string       `json:"from"`
+	To              string       `json:"to"`
+	MaxDetour       *int64       `json:"maxDetour"`
+	MaxDetourRatio  *float64     `json:"maxDetourRatio"`
+	SimplePathsOnly bool         `json:"simplePathsOnly"`
+	Complete        bool         `json:"complete"`
+	Paths           []goldenPath `json:"paths"`
 }
 
 const goldenDir = "../../testdata/golden"
@@ -61,6 +62,7 @@ func TestGoldenCases(t *testing.T) {
 			if c.MaxDetourRatio != nil {
 				g.SetMaxDetourRatio(*c.MaxDetourRatio)
 			}
+			g.SetSimplePathsOnly(c.SimplePathsOnly)
 
 			// Complete: all paths must come and then an empty path. Otherwise: all paths up to
 			// the weight of the last expected one.

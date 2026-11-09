@@ -1,6 +1,14 @@
 package eppstein
 
-import "strings"
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"slices"
+	"strconv"
+	"strings"
+)
 
 // Arc flags are an optional speed-up of the shortest path tree computation for many queries.
 //
@@ -17,6 +25,7 @@ type arcFlagsState struct {
 	regionCount     int
 	autoRegionCount int
 	manualRegions   string
+	filePartition   []int32 // region of every vertex, from EnableArcFlagsFromPartition
 	vertexRegion    []int32
 	arcFlags        []bool // flag of edge e for region r: arcFlags[e*regionCount+r]
 }
@@ -41,7 +50,7 @@ func (g *Graph) EnableArcFlags(regionCount int) bool {
 	if regionCount < 1 {
 		return false
 	}
-	g.autoRegionCount, g.manualRegions, g.arcFlagsEnabled = regionCount, "", true
+	g.autoRegionCount, g.manualRegions, g.filePartition, g.arcFlagsEnabled = regionCount, "", nil, true
 	g.arcFlagsValid, g.ready = false, false
 	return true
 }
@@ -53,9 +62,88 @@ func (g *Graph) EnableArcFlagsRegions(regions string) bool {
 	if regions == "" || g.parsePartition(regions) == nil {
 		return false
 	}
-	g.manualRegions, g.autoRegionCount, g.arcFlagsEnabled = regions, 0, true
+	g.manualRegions, g.autoRegionCount, g.filePartition, g.arcFlagsEnabled = regions, 0, nil, true
 	g.arcFlagsValid, g.ready = false, false
 	return true
+}
+
+// EnableArcFlagsFromPartition enables arc flags with a partition computed by an external
+// partitioner, e.g. mt-KaHyPar (https://github.com/kahypar/mt-kahypar), KaHIP or METIS. Write the
+// graph with WriteMetisGraph, partition it, and pass the result: one line per vertex, in the order
+// of the vertex indices, with its region number (0, 1, 2, ...), the output format of these
+// partitioners. Empty lines and lines starting with '%' or '#' are skipped. Good partitions have few
+// edges between regions, which makes the preprocessing faster and the flags more selective. If
+// vertices are added later, arc flags are disabled on the next query.
+//
+// It returns an error naming the line for a value that is not a region number between 0 and
+// VertexCount()-1, or if the number of lines is not VertexCount(); arc flags are then unchanged.
+func (g *Graph) EnableArcFlagsFromPartition(r io.Reader) error {
+	if r == nil {
+		return errors.New("eppstein: EnableArcFlagsFromPartition: nil reader")
+	}
+	n := len(g.labels)
+	partition := make([]int32, 0, n)
+	scanner := bufio.NewScanner(r)
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || line[0] == '%' || line[0] == '#' {
+			continue // empty or comment
+		}
+		region, err := strconv.ParseUint(line, 10, 31)
+		if err != nil || int(region) >= max(n, 1) {
+			return fmt.Errorf("line %d: expected a region number between 0 and %d, found %q", lineNumber, n-1, line)
+		}
+		if len(partition) == n {
+			return fmt.Errorf("line %d: more lines than the %d vertices of the graph", lineNumber, n)
+		}
+		partition = append(partition, int32(region))
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if len(partition) != n {
+		return fmt.Errorf("the partition has %d regions, the graph has %d vertices", len(partition), n)
+	}
+	g.filePartition, g.manualRegions, g.autoRegionCount, g.arcFlagsEnabled = partition, "", 0, true
+	g.arcFlagsValid, g.ready = false, false
+	return nil
+}
+
+// WriteMetisGraph writes the graph in METIS format, the input format of graph partitioners such as
+// mt-KaHyPar, KaHIP and METIS (see EnableArcFlagsFromPartition). Partitioners expect an undirected
+// graph: an edge in either direction connects two vertices once. Self-loops, parallel edges and
+// edges with negative weight (switched off) are left out. Vertex i is written as METIS vertex i+1.
+func (g *Graph) WriteMetisGraph(w io.Writer) error {
+	if w == nil {
+		return errors.New("eppstein: WriteMetisGraph: nil writer")
+	}
+	n := len(g.labels)
+	neighbors := make([][]int32, n)
+	for e := range g.edgeTail {
+		a, b := g.edgeTail[e], g.edgeHead[e]
+		if a != b && g.edgeWeight[e] >= 0 {
+			neighbors[a] = append(neighbors[a], b)
+			neighbors[b] = append(neighbors[b], a)
+		}
+	}
+	undirected := 0
+	for v := range neighbors {
+		slices.Sort(neighbors[v])
+		neighbors[v] = slices.Compact(neighbors[v])
+		undirected += len(neighbors[v])
+	}
+	out := bufio.NewWriter(w)
+	fmt.Fprintf(out, "%d %d\n", n, undirected/2)
+	for _, list := range neighbors {
+		for i, u := range list {
+			if i > 0 {
+				out.WriteByte(' ')
+			}
+			out.WriteString(strconv.Itoa(int(u) + 1))
+		}
+		out.WriteByte('\n')
+	}
+	return out.Flush()
 }
 
 // DisableArcFlags disables arc flags and releases their memory.
@@ -98,7 +186,11 @@ func (g *Graph) ensureArcFlags() {
 	}
 	g.ensureAdjacency()
 	var partition []int32
-	if g.manualRegions != "" {
+	if g.filePartition != nil {
+		if len(g.filePartition) == len(g.labels) {
+			partition = slices.Clone(g.filePartition)
+		}
+	} else if g.manualRegions != "" {
 		partition = g.parsePartition(g.manualRegions)
 	} else {
 		partition = g.automaticPartition(g.autoRegionCount)

@@ -963,3 +963,196 @@ func TestPathValues(t *testing.T) {
 		t.Fatal("empty path has vertices")
 	}
 }
+
+func TestSimplePathsMatchBruteForce(t *testing.T) {
+	for variant := 0; variant < 3; variant++ { // plain, arc flags, corridor
+		rnd := rand.New(rand.NewSource(int64(23 + variant)))
+		checked := 0
+		for it := 0; it < 300; it++ {
+			n := 2 + rnd.Intn(7)
+			var edges []testEdge
+			for i := 0; i < n; i++ {
+				for j := 0; j < n; j++ {
+					if rnd.Float64() < 0.35 {
+						w := int64(rnd.Intn(10))
+						if rnd.Float64() < 0.05 {
+							w -= 20 // negative: ignored
+						}
+						edges = append(edges, testEdge{i, j, w})
+					}
+				}
+			}
+			g := NewGraph()
+			for i := 0; i < n; i++ {
+				g.AddVertex(fmt.Sprintf("V%d", i))
+			}
+			for _, e := range edges {
+				g.AddEdge(e.from, e.to, e.weight)
+			}
+			g.SetSimplePathsOnly(true)
+			if variant == 1 {
+				g.EnableArcFlags(1 + rnd.Intn(3))
+			}
+			s, target := rnd.Intn(n), rnd.Intn(n)
+			expected := simplePathWeights(n, edges, s, target)
+			if variant == 2 && len(expected) > 0 {
+				g.SetMaxDetour(int64(rnd.Intn(12)))
+				var within []int64
+				for _, w := range expected {
+					if w <= expected[0]+g.MaxDetour() {
+						within = append(within, w)
+					}
+				}
+				expected = within
+			}
+			var actual []int64
+			for p := range g.PathsByIndex(s, target) {
+				if !isSimplePath(p) {
+					t.Fatalf("path %s repeats a vertex", p)
+				}
+				if actual = append(actual, p.Weight()); len(actual) > len(expected)+5 {
+					break
+				}
+			}
+			if !equalInts(actual, expected) {
+				t.Fatalf("variant %d it %d: weights %v, want %v", variant, it, actual, expected)
+			}
+			if len(expected) > 0 {
+				checked++
+			}
+		}
+		if checked < 100 {
+			t.Fatalf("variant %d: only %d graphs with paths", variant, checked)
+		}
+	}
+}
+
+func TestSimplePathsTwoWayRoadsGiveRealAlternatives(t *testing.T) {
+	g := NewGraph()
+	g.CreateVertices("HOME,PARK,BAKERY,STATION,OFFICE")
+	for _, r := range []struct {
+		a, b string
+		w    int64
+	}{
+		{"HOME", "PARK", 2}, {"HOME", "BAKERY", 4}, {"PARK", "BAKERY", 1}, {"PARK", "STATION", 7},
+		{"BAKERY", "STATION", 2}, {"BAKERY", "OFFICE", 6}, {"STATION", "OFFICE", 1},
+	} {
+		g.CreateEdges(r.a+","+r.b, r.b+","+r.a, r.w, "road") // both directions
+	}
+	third := 0
+	for p := range g.Paths("HOME", "OFFICE") { // default (Eppstein): the third path drives back and forth
+		if third++; third == 3 {
+			if p.VertexNames() != "HOME,PARK,BAKERY,STATION,OFFICE,STATION,OFFICE" {
+				t.Fatalf("third walk = %s", p)
+			}
+			break
+		}
+	}
+
+	g.SetSimplePathsOnly(true)
+	var all []int64
+	var names []string
+	for p := range g.Paths("HOME", "OFFICE") { // finite: ends by itself
+		all = append(all, p.Weight())
+		names = append(names, p.VertexNames())
+	}
+	// exactly the 7 simple routes (checked by hand with a depth-first search), then the end
+	if !equalInts(all, []int64{6, 7, 9, 10, 10, 13, 17}) || names[2] != "HOME,PARK,BAKERY,OFFICE" {
+		t.Fatalf("weights %v, paths %v", all, names)
+	}
+	var weightsOnly []int64
+	for w := range g.PathWeights("HOME", "OFFICE") {
+		weightsOnly = append(weightsOnly, w)
+	}
+	if !equalInts(weightsOnly, all) {
+		t.Fatalf("PathWeights %v", weightsOnly)
+	}
+	g.SetMaxDetourRatio(0.5) // corridor: at most 9 minutes
+	weightsOnly = nil
+	for w := range g.PathWeights("HOME", "OFFICE") {
+		weightsOnly = append(weightsOnly, w)
+	}
+	if !equalInts(weightsOnly, []int64{6, 7, 9}) {
+		t.Fatalf("with corridor %v", weightsOnly)
+	}
+}
+
+func TestSimplePathsEdgeCasesAndLaziness(t *testing.T) {
+	g := eppsteinExample()
+	g.SetSimplePathsOnly(true)
+	if !g.SimplePathsOnly() {
+		t.Fatal("setting not stored")
+	}
+	if g.FindShortestPath("T", "S").IsValid() || g.FindShortestPath("C", "C").IsValid() || g.FindShortestPath("S", "X").IsValid() {
+		t.Fatal("path where none exists")
+	}
+	if p := g.FindShortestPath("S", "T"); p.String() != "S,D,E,F,J,T (55)" || g.spurSearches != 0 {
+		t.Fatalf("first path %s, spur searches %d", p, g.spurSearches)
+	}
+	if !g.FindNextShortestPath().IsValid() || g.spurSearches == 0 {
+		t.Fatal("spurs must be searched for the next path")
+	}
+	g.SetSimplePathsOnly(false) // changing the mode requires a new query
+	if g.FindNextShortestPath().IsValid() {
+		t.Fatal("query not invalidated")
+	}
+	g.SetSimplePathsOnly(true)
+	count := 0
+	for p := range g.Paths("S", "T") {
+		if strings.Contains(p.VertexNames(), "C,C") {
+			t.Fatalf("loop in %s", p)
+		}
+		count++
+	}
+	if count != 15 {
+		t.Fatalf("%d simple paths, want 15", count)
+	}
+}
+
+func TestWriteMetisGraphWritesUndirectedSimpleGraph(t *testing.T) {
+	g := NewGraph()
+	g.CreateVertices("A,B,C,D")
+	g.CreateEdges("A,B,A,B,C,C", "B,A,B,C,C,D", 1, "x") // A-B three times, self-loop C, C-D
+	g.CreateEdges("D", "A", -1, "off")                  // switched off: left out
+	var b strings.Builder
+	if err := g.WriteMetisGraph(&b); err != nil {
+		t.Fatal(err)
+	}
+	if b.String() != "4 3\n2\n1 3\n2 4\n3\n" {
+		t.Fatalf("METIS output %q", b.String())
+	}
+}
+
+func TestEnableArcFlagsFromPartitionUsesExternalPartition(t *testing.T) {
+	g := eppsteinExample()
+	plain := weights(take(eppsteinExample(), "S", "T", 30))
+	// same regions as "S,A,B,C;D,E,F;G,H,I,J,K,T", one region number per vertex (in index order)
+	err := g.EnableArcFlagsFromPartition(strings.NewReader("% from a partitioner\n0\n0\n0\n0\n1\n1\n1\n2\n2\n2\n2\n2\n2\n"))
+	if err != nil || !g.ArcFlagsEnabled() || g.ArcFlagsRegionCount() != 3 {
+		t.Fatalf("err %v, regions %d", err, g.ArcFlagsRegionCount())
+	}
+	if e, _ := g.FindVertex("E"); e.Region() != 1 {
+		t.Fatalf("region of E = %d", e.Region())
+	}
+	if w := weights(take(g, "S", "T", 30)); !equalInts(w, plain) {
+		t.Fatalf("weights %v, want %v", w, plain)
+	}
+	for text, want := range map[string]string{
+		"0\n1\n":                  "13 vertices",
+		strings.Repeat("0\n", 14): "line 14:",
+		"0\n-1\n":                 "line 2:",
+		"x\n":                     "line 1:",
+		"13\n":                    "line 1:", // region >= VertexCount
+	} {
+		if err := eppsteinExample().EnableArcFlagsFromPartition(strings.NewReader(text)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: error %v, want %s", text, err, want)
+		}
+	}
+	if eppsteinExample().EnableArcFlagsFromPartition(nil) == nil || g.WriteMetisGraph(nil) == nil {
+		t.Error("nil accepted")
+	}
+	g.AddVertex("NEW") // partition no longer fits: arc flags are disabled on the next query
+	if w := weights(take(g, "S", "T", 5)); !equalInts(w, plain[:5]) || g.ArcFlagsEnabled() {
+		t.Fatalf("after AddVertex: %v, enabled %v", w, g.ArcFlagsEnabled())
+	}
+}

@@ -50,6 +50,7 @@ type Graph struct {
 	changeCount        int // incremented on every change of the graph and of query settings
 	queryState             // current query (paths.go)
 	arcFlagsState          // arc flags (arcflags.go)
+	simpleState            // simple paths (simplepaths.go)
 }
 
 // NewGraph creates an empty graph. The zero value Graph{} is usable as well.
