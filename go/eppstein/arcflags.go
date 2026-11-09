@@ -2,287 +2,249 @@ package eppstein
 
 import "strings"
 
-// Arc flags are an optional speed-up of the shortest path tree computation.
+// Arc flags are an optional speed-up of the shortest path tree computation for many queries.
 //
-// The vertices are partitioned into regions. During preprocessing every arc (u,v) gets
-// one flag per region r, set if the arc lies on a shortest path from u to some vertex
-// of r. The backward Dijkstra in FindShortestPath then only relaxes arcs whose flag
-// for the region of the endpoint t is set.
-//
-// Every shortest path u->t only uses arcs flagged for region(t), so all distances (and
-// sidetrack deltas) stay exact: the k shortest paths are the same as without arc flags.
-// Flags are recomputed lazily on the next query after the graph has been modified.
+// The vertices are partitioned into regions. During preprocessing every edge (u,v) gets one flag
+// per region r, set if the edge lies on a shortest path from u to some vertex of r. The search
+// towards a goal then only uses edges flagged for the goal's region. Every shortest path u->goal
+// only uses such edges, so all distances (and therefore all results) stay exact. Flags are
+// recomputed lazily on the next query after the graph has been changed.
 
-// arcFlagsState holds the arc-flags configuration of a graph.
+// arcFlagsState holds the arc-flags configuration and data of a graph.
 type arcFlagsState struct {
-	enabled         bool   // flags are used for shortest path tree computation
-	valid           bool   // flags match current graph (structure, weights, partition)
-	regionCount     int    // number of regions in current partition
-	autoRegionCount int    // requested regions for automatic partition, 0 if manual
-	manualRegions   string // user-defined partition, "" for automatic partition
+	arcFlagsEnabled bool
+	arcFlagsValid   bool
+	regionCount     int
+	autoRegionCount int
+	manualRegions   string
+	vertexRegion    []int32
+	arcFlags        []bool // flag of edge e for region r: arcFlags[e*regionCount+r]
 }
 
 // ArcFlagsEnabled tells if the arc-flags optimization is enabled.
-func (g *Graph) ArcFlagsEnabled() bool {
-	return g.arcFlags.enabled
-}
+func (g *Graph) ArcFlagsEnabled() bool { return g.arcFlagsEnabled }
 
-// ArcFlagsRegionCount returns the number of regions used by arc flags, 0 if disabled.
-// It runs pending preprocessing if needed.
+// ArcFlagsRegionCount returns the number of regions, 0 if disabled. It runs pending
+// preprocessing if needed.
 func (g *Graph) ArcFlagsRegionCount() int {
 	g.ensureArcFlags()
-	if !g.arcFlags.enabled {
+	if !g.arcFlagsEnabled {
 		return 0
 	}
-	return g.arcFlags.regionCount
+	return g.regionCount
 }
 
-// EnableArcFlags enables arc flags with an automatic partition of the vertices into
-// regionCount regions (connected chunks of a breadth-first ordering).
-// It returns false if regionCount is less than 1.
+// EnableArcFlags enables arc flags with an automatic partition of the vertices into regionCount
+// regions (connected chunks of a breadth-first ordering). It returns false if regionCount is less
+// than 1.
 func (g *Graph) EnableArcFlags(regionCount int) bool {
 	if regionCount < 1 {
 		return false
 	}
-	g.arcFlags.autoRegionCount = regionCount
-	g.arcFlags.manualRegions = ""
-	g.arcFlags.enabled = true
-	g.invalidateArcFlags()
+	g.autoRegionCount, g.manualRegions, g.arcFlagsEnabled = regionCount, "", true
+	g.arcFlagsValid, g.ready = false, false
 	return true
 }
 
-// EnableArcFlagsRegions enables arc flags with a user-defined partition: semicolon-separated
-// regions, each one a comma-separated list of labels, e.g. "S,A,B,C;D,E,F;G,H,I,J,K,T".
-// Vertices not listed are put together into one additional region.
-// It returns false if a label does not exist or is assigned twice.
+// EnableArcFlagsRegions enables arc flags with a given partition: semicolon-separated regions,
+// each a comma-separated list of labels, e.g. "S,A,B,C;D,E,F". Vertices not listed form one
+// additional region. It returns false if a label does not exist or is listed twice.
 func (g *Graph) EnableArcFlagsRegions(regions string) bool {
-	if regions == "" || !g.applyManualPartition(regions) {
+	if regions == "" || g.parsePartition(regions) == nil {
 		return false
 	}
-	g.arcFlags.manualRegions = regions
-	g.arcFlags.autoRegionCount = 0
-	g.arcFlags.enabled = true
-	g.invalidateArcFlags()
+	g.manualRegions, g.autoRegionCount, g.arcFlagsEnabled = regions, 0, true
+	g.arcFlagsValid, g.ready = false, false
 	return true
 }
 
-// DisableArcFlags disables the arc-flags optimization and releases all flags.
+// DisableArcFlags disables arc flags and releases their memory.
 func (g *Graph) DisableArcFlags() {
-	g.arcFlags.enabled = false
-	g.arcFlags.autoRegionCount = 0
-	g.arcFlags.manualRegions = ""
-	g.clearArcFlagData()
+	g.arcFlagsState = arcFlagsState{}
+	g.ready = false
 }
 
-// PrecomputeArcFlags runs the arc-flags preprocessing immediately (otherwise it is done
-// lazily by the next query). It returns false if arc flags are disabled.
+// PrecomputeArcFlags runs the arc-flags preprocessing now (otherwise it runs on the next query).
+// It returns false if arc flags are disabled.
 func (g *Graph) PrecomputeArcFlags() bool {
 	g.ensureArcFlags()
-	return g.arcFlags.enabled && g.arcFlags.valid
+	return g.arcFlagsEnabled && g.arcFlagsValid
 }
 
-// resetArcFlags disables arc flags completely, used when all vertices are recreated.
-func (g *Graph) resetArcFlags() {
-	g.DisableArcFlags()
+func (g *Graph) hasArcFlag(edge, region int) bool {
+	return region < 0 || !g.arcFlagsValid || region >= g.regionCount || g.arcFlags[edge*g.regionCount+region]
 }
 
-// invalidateArcFlags marks flags as outdated, they are recomputed on next query.
-func (g *Graph) invalidateArcFlags() {
-	g.arcFlags.valid = false
-}
-
-// clearArcFlagData removes regions and flags from all vertices and edges.
-func (g *Graph) clearArcFlagData() {
-	g.arcFlags.valid = false
-	g.arcFlags.regionCount = 0
-	for _, v := range g.vertices {
-		v.Region = -1
-		for _, e := range v.RelatedEdges {
-			e.arcFlags = nil
-		}
+func (g *Graph) regionOf(v int) int {
+	if g.arcFlagsValid && v < len(g.vertexRegion) {
+		return int(g.vertexRegion[v])
 	}
+	return -1
 }
 
-// arcFlagsRegionOf returns the region used for pruning, -1 if arc flags are not used.
-func (g *Graph) arcFlagsRegionOf(v *Vertex) int {
-	if !g.arcFlags.enabled || !g.arcFlags.valid || v == nil {
+// arcFlagsRegionOf returns the region used to prune edges for a goal, -1 if arc flags are not
+// used.
+func (g *Graph) arcFlagsRegionOf(v int) int {
+	if !g.arcFlagsEnabled {
 		return -1
 	}
-	return v.Region
+	return g.regionOf(v)
 }
 
 // ensureArcFlags recomputes partition and flags if enabled and outdated.
 func (g *Graph) ensureArcFlags() {
-	if !g.arcFlags.enabled || g.arcFlags.valid {
+	if !g.arcFlagsEnabled || g.arcFlagsValid {
 		return
 	}
-	g.clearArcFlagData()
-	if g.arcFlags.manualRegions != "" {
-		if !g.applyManualPartition(g.arcFlags.manualRegions) {
-			g.DisableArcFlags() // partition no longer valid, fall back to plain Dijkstra
-			return
-		}
+	g.ensureAdjacency()
+	var partition []int32
+	if g.manualRegions != "" {
+		partition = g.parsePartition(g.manualRegions)
 	} else {
-		g.applyAutomaticPartition(g.arcFlags.autoRegionCount)
+		partition = g.automaticPartition(g.autoRegionCount)
+	}
+	if partition == nil {
+		g.DisableArcFlags() // partition no longer valid (vertices were recreated)
+		return
+	}
+	g.vertexRegion = partition
+	g.regionCount = 0
+	for _, r := range partition {
+		g.regionCount = max(g.regionCount, int(r)+1)
 	}
 	g.computeArcFlags()
-	g.arcFlags.valid = true
+	g.arcFlagsValid = true
 }
 
-// applyManualPartition assigns regions from a partition string.
-// It returns false if a label does not exist or is repeated.
-func (g *Graph) applyManualPartition(regions string) bool {
-	for _, v := range g.vertices {
-		v.Region = -1
+// parsePartition returns the region of every vertex from a partition string, nil if a label
+// does not exist or is repeated.
+func (g *Graph) parsePartition(regions string) []int32 {
+	result := make([]int32, len(g.labels))
+	for i := range result {
+		result[i] = -1
 	}
-	fail := func() bool {
-		for _, v := range g.vertices {
-			v.Region = -1
-		}
-		return false
-	}
-
-	region := 0
-	for _, group := range strings.Split(strings.ToUpper(regions), ";") {
+	region := int32(0)
+	for _, group := range strings.Split(regions, ";") {
 		any := false
 		for _, label := range strings.Split(group, ",") {
 			label = strings.TrimSpace(label)
 			if label == "" {
 				continue
 			}
-			v := g.getVertex(label)
-			if v == nil || v.Region >= 0 { // unknown or already assigned
-				return fail()
+			v := g.VertexIndex(label)
+			if v < 0 || result[v] >= 0 {
+				return nil
 			}
-			v.Region = region
+			result[v] = region
 			any = true
 		}
 		if any {
 			region++
 		}
 	}
-
-	// Collects vertices not listed into one additional region
-	unassigned := false
-	for _, v := range g.vertices {
-		if v.Region < 0 {
-			v.Region = region
-			unassigned = true
+	for v := range result {
+		if result[v] < 0 {
+			result[v] = region // vertices not listed: one additional region
 		}
 	}
-	g.arcFlags.regionCount = region
-	if unassigned {
-		g.arcFlags.regionCount++
-	}
-	return true
+	return result
 }
 
-// applyAutomaticPartition splits the vertices into connected chunks of similar size,
-// using a breadth-first ordering over the underlying undirected graph.
-func (g *Graph) applyAutomaticPartition(count int) {
-	n := len(g.vertices)
+// automaticPartition splits the vertices into connected chunks of similar size, using a
+// breadth-first ordering over the underlying undirected graph.
+func (g *Graph) automaticPartition(count int) []int32 {
+	n := len(g.labels)
+	result := make([]int32, n)
 	if n == 0 {
-		g.arcFlags.regionCount = 0
-		return
+		return result
 	}
 	count = min(max(count, 1), n)
 	chunk := (n + count - 1) / count
 
-	visited := make(map[*Vertex]bool, n)
+	visited := make([]bool, n)
+	var queue []int32
 	index := 0
-	for _, start := range g.vertices {
+	visit := func(w int32) {
+		if !visited[w] {
+			visited[w] = true
+			queue = append(queue, w)
+		}
+	}
+	for start := range n {
 		if visited[start] {
 			continue
 		}
-		visited[start] = true
-		queue := []*Vertex{start}
+		visit(int32(start))
 		for len(queue) > 0 {
 			v := queue[0]
 			queue = queue[1:]
-			v.Region = index / chunk
+			result[v] = int32(index / chunk)
 			index++
-			for _, e := range v.RelatedEdges { // incoming and outgoing edges
-				w := e.Head
-				if e.Head == v {
-					w = e.Tail
-				}
-				if !visited[w] {
-					visited[w] = true
-					queue = append(queue, w)
-				}
+			for _, e := range g.outEdges[g.outStart[v]:g.outStart[v+1]] {
+				visit(g.edgeHead[e])
+			}
+			for _, e := range g.inEdges[g.inStart[v]:g.inStart[v+1]] {
+				visit(g.edgeTail[e])
 			}
 		}
 	}
-	g.arcFlags.regionCount = (n + chunk - 1) / chunk
+	return result
 }
 
-// computeArcFlags computes flags for the current partition: arcs inside a region get that
-// region's flag; for every boundary vertex b of region r (a vertex with an incoming arc from
-// another region) a backward Dijkstra to b is run and every tight arc
-// (d(u,b) = w(u,v) + d(v,b)) gets flag r. Negative arcs are ignored.
+// computeArcFlags computes the flags: edges inside a region get that region's flag. For every
+// boundary vertex b of region r (a vertex with an incoming edge from another region), a backward
+// Dijkstra to b runs, and every tight edge between reached vertices (d(u,b) = w(u,v) + d(v,b))
+// gets flag r. Only the edges of reached vertices are checked. Negative edges are ignored.
 func (g *Graph) computeArcFlags() {
-	g.ensureAdjacency() // backward Dijkstra uses incoming edge slices
-	var arcs []*Edge
-	var boundary []*Vertex
-	isBoundary := make(map[*Vertex]bool)
-	for _, v := range g.vertices {
-		for _, e := range v.RelatedEdges {
-			if e.Tail != v { // each edge is visited once, from its tail
-				continue
-			}
-			arcs = append(arcs, e)
-			e.arcFlags = make([]bool, g.arcFlags.regionCount)
-			if e.Weight < 0 {
-				continue
-			}
-			if e.Tail.Region == e.Head.Region {
-				e.arcFlags[e.Head.Region] = true
-			} else if !isBoundary[e.Head] {
-				isBoundary[e.Head] = true
-				boundary = append(boundary, e.Head)
-			}
+	n, regions := len(g.labels), g.regionCount
+	g.arcFlags = make([]bool, len(g.edgeTail)*regions)
+	var boundary []int32
+	isBoundary := make([]bool, n)
+	for e := range g.edgeTail {
+		if g.edgeWeight[e] < 0 {
+			continue
+		}
+		tailRegion, headRegion := g.vertexRegion[g.edgeTail[e]], g.vertexRegion[g.edgeHead[e]]
+		if tailRegion == headRegion {
+			g.arcFlags[e*regions+int(headRegion)] = true
+		} else if head := g.edgeHead[e]; !isBoundary[head] {
+			isBoundary[head] = true
+			boundary = append(boundary, head)
 		}
 	}
 
-	for _, b := range boundary {
-		dist := g.backwardDistances(b)
-		for _, e := range arcs {
-			if e.Weight < 0 {
+	dist := make([]int64, n)
+	seen := make([]int32, n) // search number that reached the vertex (0: none)
+	var reached []int32
+	for search, b := range boundary {
+		mark := int32(search + 1)
+		reached = reached[:0]
+		fringe := newPriorityQueue[int32](64)
+		fringe.Enqueue(b, 0)
+		for {
+			v, d, ok := fringe.Dequeue()
+			if !ok {
+				break
+			}
+			if seen[v] == mark {
 				continue
 			}
-			dTail, okTail := dist[e.Tail]
-			dHead, okHead := dist[e.Head]
-			if okTail && okHead && dTail == e.Weight+dHead {
-				e.arcFlags[b.Region] = true
-			}
-		}
-	}
-}
-
-// backwardDistances computes the distance to target for every vertex that can reach it.
-func (g *Graph) backwardDistances(target *Vertex) map[*Vertex]int64 {
-	dist := map[*Vertex]int64{target: 0}
-	fringe := newPriorityQueue[*Edge](len(g.vertices))
-	v := target
-	for {
-		if v != nil {
-			dv := dist[v]
-			for _, e := range v.inEdges {
-				if _, done := dist[e.Tail]; e.Weight >= 0 && !done {
-					fringe.Enqueue(e, e.Weight+dv)
+			seen[v], dist[v] = mark, d
+			reached = append(reached, v)
+			for _, e := range g.inEdges[g.inStart[v]:g.inStart[v+1]] {
+				if g.edgeWeight[e] >= 0 && seen[g.edgeTail[e]] != mark {
+					fringe.Enqueue(g.edgeTail[e], d+g.edgeWeight[e])
 				}
 			}
 		}
-		e, weight, ok := fringe.Dequeue()
-		if !ok {
-			break
-		}
-		v = e.Tail
-		if _, done := dist[v]; done {
-			v = nil
-		} else {
-			dist[v] = weight
+		region := int(g.vertexRegion[b])
+		for _, v := range reached {
+			for _, e := range g.outEdges[g.outStart[v]:g.outStart[v+1]] {
+				head := g.edgeHead[e]
+				if g.edgeWeight[e] >= 0 && seen[head] == mark && dist[v] == g.edgeWeight[e]+dist[head] {
+					g.arcFlags[int(e)*regions+region] = true
+				}
+			}
 		}
 	}
-	return dist
 }

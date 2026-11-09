@@ -102,11 +102,11 @@ func reachable(edges []testEdge, s, t int) bool {
 
 func assertValidPath(t *testing.T, p Path, s, target string) {
 	t.Helper()
-	if !p[0].Tail.Equals(s) || !p[len(p)-1].Head.Equals(target) {
+	if p.Edge(0).Tail().Label() != s || p.Edge(p.Len()-1).Head().Label() != target {
 		t.Fatalf("path %s does not go from %s to %s", p.VertexNames(), s, target)
 	}
-	for i := 1; i < len(p); i++ {
-		if p[i-1].Head != p[i].Tail {
+	for i := 1; i < p.Len(); i++ {
+		if p.Edge(i-1).Head() != p.Edge(i).Tail() {
 			t.Fatalf("path %s is not connected", p.VertexNames())
 		}
 	}
@@ -193,8 +193,8 @@ func TestNegativeWeightsDisableEdges(t *testing.T) {
 	g := eppsteinExample()
 	g.EdgeGroupWeights("BETA", -1)
 	for _, p := range take(g, "S", "T", 50) {
-		for _, e := range p {
-			if e.Group == "BETA" {
+		for e := range p.Edges() {
+			if e.Group() == "BETA" {
 				t.Fatalf("path %s uses disabled edge %s", p.VertexNames(), e)
 			}
 		}
@@ -358,16 +358,43 @@ func TestPriorityQueueSortedAndStableForTies(t *testing.T) {
 	}
 }
 
-func TestSidetrackChainRebuildsFullList(t *testing.T) {
-	g := eppsteinExample()
-	e := g.FindShortestPath("S", "T")[0]
-	root := &stNode{}
-	child := &stNode{parent: &stNode{parent: root, sidetrack: e}, sidetrack: e}
-	if got := child.sidetracks(); len(got) != 2 || got[0] != e || got[1] != e {
-		t.Fatalf("sidetracks = %v", got)
+func TestSidetrackHeapMergeIsPersistentAndHeapOrdered(t *testing.T) {
+	rnd := rand.New(rand.NewSource(7))
+	var heap *heapNode
+	var versions []*heapNode
+	var contents [][]int64
+	var keys []int64
+	for i := 0; i < 300; i++ {
+		key := int64(rnd.Intn(50))
+		heap = mergeHeaps(heap, &heapNode{edge: int32(i), key: key, rank: 1})
+		keys = append(keys, key)
+		versions = append(versions, heap)
+		sorted := append([]int64(nil), keys...)
+		sort.Slice(sorted, func(a, b int) bool { return sorted[a] < sorted[b] })
+		contents = append(contents, sorted)
 	}
-	if len(root.sidetracks()) != 0 {
-		t.Fatal("root has sidetracks")
+	// every version still contains exactly its keys, in heap order (persistence)
+	for i := 0; i < len(versions); i += 37 {
+		var got []int64
+		var walk func(n *heapNode)
+		walk = func(n *heapNode) {
+			if n == nil {
+				return
+			}
+			for _, child := range []*heapNode{n.left, n.right} {
+				if child != nil && child.key < n.key {
+					t.Fatal("heap order violated")
+				}
+			}
+			got = append(got, n.key)
+			walk(n.left)
+			walk(n.right)
+		}
+		walk(versions[i])
+		sort.Slice(got, func(a, b int) bool { return got[a] < got[b] })
+		if !equalInts(got, contents[i]) {
+			t.Fatalf("version %d: keys %v, want %v", i, got, contents[i])
+		}
 	}
 }
 
@@ -528,10 +555,10 @@ func TestAddVertexReturnsIndicesAndMixesWithCreateVertices(t *testing.T) {
 	check(g.VertexIndex("X"), -1, "VertexIndex(X)")
 	check(g.VertexCount(), 3, "VertexCount")
 
-	if !g.AddEdge(0, 2, 4) || !g.AddEdgeGroup(0, 1, 1, "fast") || !g.AddEdge(1, 2, 1) {
-		t.Fatal("valid edge rejected")
+	if g.AddEdge(0, 2, 4) != 0 || g.AddEdgeGroup(0, 1, 1, "fast") != 1 || g.AddEdge(1, 2, 1) != 2 {
+		t.Fatal("AddEdge must return the edge numbers 0, 1, 2")
 	}
-	if g.AddEdge(0, 3, 1) || g.AddEdge(-1, 0, 1) {
+	if g.AddEdge(0, 3, 1) != -1 || g.AddEdge(-1, 0, 1) != -1 {
 		t.Fatal("invalid index accepted")
 	}
 	if !g.CreateEdges("HOME", "a", 2, "x") { // string and index methods mix
@@ -722,5 +749,200 @@ func TestSerializeNegativeEdgesDashedAndRegionsAsClusters(t *testing.T) {
 	}
 	if g.SerializeTo(nil, nil) == nil {
 		t.Error("nil writer accepted")
+	}
+}
+
+func TestSetEdgeWeightInvalidatesArcFlagsAndQuery(t *testing.T) {
+	g := NewGraph()
+	g.CreateVertices("S,A,B,T")
+	g.CreateEdges("S,A", "A,T", 1, "x")
+	g.CreateEdges("S,B", "B,T", 5, "y")
+	if !g.EnableArcFlagsRegions("S,A,B;T") {
+		t.Fatal("arc flags not enabled")
+	}
+	before := g.FindShortestPath("S", "T")
+	if before.VertexNames() != "S,A,T" {
+		t.Fatalf("path = %s", before.VertexNames())
+	}
+	for e := range before.Edges() {
+		g.SetEdgeWeight(e, 100)
+	}
+	if g.FindNextShortestPath().IsValid() {
+		t.Fatal("query not invalidated by the change")
+	}
+	if after := g.FindShortestPath("S", "T"); after.String() != "S,B,T (10)" {
+		t.Fatalf("path after change = %s", after)
+	}
+	if before.Weight() != 2 {
+		t.Fatal("a path must keep the weight it had when it was found")
+	}
+
+	other := NewGraph()
+	other.CreateVertices("A,B")
+	other.AddEdge(0, 1, 1)
+	assertPanics(t, func() { g.SetEdgeWeight(other.Edge(0), 1) })
+	assertPanics(t, func() { g.Edge(99) })
+	assertPanics(t, func() { g.Vertex(-1) })
+}
+
+func assertPanics(t *testing.T, f func()) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected a panic")
+		}
+	}()
+	f()
+}
+
+func TestVertexAndEdgeAreValues(t *testing.T) {
+	g := eppsteinExample()
+	p := g.FindShortestPath("S", "T")
+	s, ok := g.FindVertex("s")
+	if !ok || s != p.Edge(0).Tail() || s != g.Vertex(s.Index()) || p.Edge(0) != g.Edge(p.Edge(0).ID()) {
+		t.Fatal("vertex or edge values are not equal")
+	}
+	if eppsteinExample().Vertex(s.Index()) == s {
+		t.Fatal("vertices of different graphs must not be equal")
+	}
+	if _, ok := g.FindVertex("X"); ok {
+		t.Fatal("unknown vertex found")
+	}
+	if s.String() != "S" || p.Edge(0).String() != "S--13-->D" {
+		t.Fatalf("strings %q %q", s, p.Edge(0))
+	}
+	if s.Distance() != 55 {
+		t.Fatalf("distance = %d", s.Distance())
+	}
+	if e, ok := s.TreeEdge(); !ok || e != p.Edge(0) {
+		t.Fatal("tree edge")
+	}
+	if next, ok := s.Next(); !ok || next.Label() != "D" {
+		t.Fatal("next")
+	}
+	if tv, _ := g.FindVertex("T"); func() bool { _, ok := tv.Next(); return ok }() {
+		t.Fatal("goal has a next vertex")
+	}
+	var heads, tails []string
+	for e := range s.OutEdges() {
+		heads = append(heads, e.Head().Label())
+	}
+	tv, _ := g.FindVertex("T")
+	for e := range tv.InEdges() {
+		tails = append(tails, e.Tail().Label())
+	}
+	sort.Strings(heads)
+	sort.Strings(tails)
+	if strings.Join(heads, ",") != "A,D" || strings.Join(tails, ",") != "F,G,J" {
+		t.Fatalf("out %v, in %v", heads, tails)
+	}
+	var names []string
+	for v := range p.Vertices() {
+		names = append(names, v.Label())
+	}
+	if strings.Join(names, ",") != p.VertexNames() {
+		t.Fatal("Vertices and VertexNames differ")
+	}
+
+	s.SetTag("start")
+	if g.Vertex(s.Index()).Tag() != "start" {
+		t.Fatal("tag not stored")
+	}
+	if a, _ := g.FindVertex("A"); a.Tag() != nil {
+		t.Fatal("tag of another vertex")
+	}
+	count := 0
+	for range g.Vertices() {
+		count++
+	}
+	for range g.Edges() {
+		count++
+	}
+	if count != 13+21 || g.EdgeCount() != 21 {
+		t.Fatalf("vertices + edges = %d", count)
+	}
+}
+
+func TestNewQueryDoesNotShowDistancesOfThePreviousQuery(t *testing.T) {
+	// distances are only valid for the current query (no reset of all vertices any more)
+	g := NewGraph()
+	g.CreateVertices("S,T,X1,X2")
+	g.CreateEdges("S,X1,X2", "T,S,X1", 10, "g")
+	g.FindShortestPath("X2", "T")
+	x2, _ := g.FindVertex("X2")
+	if x2.Distance() != 30 {
+		t.Fatalf("distance = %d", x2.Distance())
+	}
+	g.SetMaxDetour(5)
+	g.FindShortestPath("S", "T") // corridor: X1 and X2 are not reached
+	if s, _ := g.FindVertex("S"); s.Distance() != 10 || x2.Distance() != Unreached {
+		t.Fatalf("distances %d, %d", s.Distance(), x2.Distance())
+	}
+	if _, ok := x2.TreeEdge(); ok {
+		t.Fatal("tree edge of the previous query")
+	}
+}
+
+func TestPathsIteratorsAndChanges(t *testing.T) {
+	g := eppsteinExample()
+	expected := weights(take(eppsteinExample(), "S", "T", 20))
+	var fromPaths, fromWeights []int64
+	for p := range g.Paths("S", "T") {
+		if fromPaths = append(fromPaths, p.Weight()); len(fromPaths) == 20 {
+			break
+		}
+	}
+	for w := range g.PathWeights("S", "T") {
+		if fromWeights = append(fromWeights, w); len(fromWeights) == 20 {
+			break
+		}
+	}
+	if !equalInts(fromPaths, expected) || !equalInts(fromWeights, expected) {
+		t.Fatalf("paths %v, weights %v, want %v", fromPaths, fromWeights, expected)
+	}
+	for range g.Paths("S", "X") {
+		t.Fatal("path to an unknown vertex")
+	}
+	for range g.PathsByIndex(g.VertexIndex("T"), g.VertexIndex("S")) {
+		t.Fatal("path to an unreachable vertex")
+	}
+
+	g.SetMaxDetour(4)
+	var all []int64
+	for w := range g.PathWeightsByIndex(g.VertexIndex("S"), g.VertexIndex("T")) {
+		all = append(all, w)
+	}
+	if !equalInts(all, []int64{55, 58, 59}) {
+		t.Fatalf("corridor weights %v", all)
+	}
+
+	assertPanics(t, func() {
+		for p := range g.Paths("S", "T") {
+			g.SetEdgeWeight(p.Edge(0), 3) // change during the iteration
+		}
+	})
+	assertPanics(t, func() {
+		for range g.PathWeights("S", "T") {
+			g.FindShortestPath("A", "T") // another query during the iteration
+		}
+	})
+}
+
+func TestPathValues(t *testing.T) {
+	g := eppsteinExample()
+	p := g.FindShortestPath("S", "T")
+	var sum int64
+	for e := range p.Edges() {
+		sum += e.Weight()
+	}
+	if sum != p.Weight() || p.String() != "S,D,E,F,J,T (55)" {
+		t.Fatalf("weight %d, string %q", sum, p)
+	}
+	var empty Path
+	if empty.IsValid() || empty.VertexNames() != "(empty)" || empty.String() != "(empty)" {
+		t.Fatal("zero value is not the empty path")
+	}
+	for range empty.Vertices() {
+		t.Fatal("empty path has vertices")
 	}
 }

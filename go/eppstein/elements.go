@@ -1,163 +1,209 @@
 package eppstein
 
 import (
+	"iter"
 	"math"
 	"strconv"
 	"strings"
 )
 
-// Unreached is the value of Vertex.Distance for vertices whose distance to the
-// endpoint has not been calculated (or that cannot reach the endpoint).
+// Unreached is the distance of a vertex whose distance to the goal is unknown (no query yet,
+// goal not reachable, or outside of the corridor).
 const Unreached int64 = math.MinInt64
 
-// Vertex is a simple vertex with a label.
+// Vertex is a vertex of a Graph: a lightweight value (graph and index). Two Vertex values are
+// equal (==) if they refer to the same vertex of the same graph. Distance, TreeEdge and Next
+// describe the shortest path tree of the last query.
 type Vertex struct {
-	// label of the vertex (upper case)
-	label string
-	// Object is a reference for a user object, for future use.
-	Object interface{}
-
-	// EdgeToPath points to the edge in the shortest path tree.
-	EdgeToPath *Edge
-	// Distance to endpoint in shortest path calculation, Unreached if unknown.
-	Distance int64
-	// RelatedEdges contains incoming and outgoing edges of the vertex.
-	RelatedEdges []*Edge
-	// Region of the vertex for the arc-flags optimization, -1 if not assigned.
-	Region int
-	// index is the position of the vertex in the graph (see AddVertex and VertexIndex).
+	g     *Graph
 	index int
-
-	// outEdges and inEdges split RelatedEdges by direction (built by the graph before a query).
-	outEdges, inEdges []*Edge
-	// sidetrackHeap holds the sidetracks on the tree path from this vertex to t, built on demand.
-	sidetrackHeap      *heapNode
-	sidetrackHeapBuilt bool
 }
 
-// NewVertex creates a vertex with the given label.
-func NewVertex(label string) *Vertex {
-	return &Vertex{label: label, Distance: Unreached, Region: -1}
-}
+// Index returns the position of the vertex in its graph.
+func (v Vertex) Index() int { return v.index }
 
-// Next returns the next vertex in the shortest path, nil if there is none.
-func (v *Vertex) Next() *Vertex {
-	if v.EdgeToPath == nil {
-		return nil
+// Label returns the label of the vertex (upper case).
+func (v Vertex) Label() string { return v.g.labels[v.index] }
+
+// Tag returns the user object attached to the vertex, nil by default.
+func (v Vertex) Tag() any {
+	if v.index < len(v.g.tags) {
+		return v.g.tags[v.index]
 	}
-	return v.EdgeToPath.Head
+	return nil
 }
 
-// String returns the vertex label.
-func (v *Vertex) String() string {
-	return v.label
-}
-
-// Equals compares a vertex with another vertex or with a label (case-insensitive).
-func (v *Vertex) Equals(obj interface{}) bool {
-	switch o := obj.(type) {
-	case *Vertex:
-		return o != nil && strings.EqualFold(v.label, o.label)
-	case string:
-		return strings.EqualFold(v.label, o)
+// SetTag attaches any user object to the vertex.
+func (v Vertex) SetTag(tag any) {
+	if v.index >= len(v.g.tags) {
+		if tag == nil {
+			return
+		}
+		v.g.tags = append(v.g.tags, make([]any, len(v.g.labels)-len(v.g.tags))...)
 	}
-	return false
+	v.g.tags[v.index] = tag
 }
 
-// Edge is a directional edge, it goes from Tail to Head.
+// Distance returns the distance to the goal of the last query, or Unreached.
+func (v Vertex) Distance() int64 { return v.g.distanceOf(v.index) }
+
+// TreeEdge returns the edge of the shortest path tree leaving the vertex (the best first step
+// towards the goal of the last query); ok is false if there is none.
+func (v Vertex) TreeEdge() (e Edge, ok bool) {
+	if v.g.distanceOf(v.index) == Unreached || v.g.treeEdge[v.index] < 0 {
+		return Edge{}, false
+	}
+	return Edge{v.g, int(v.g.treeEdge[v.index])}, true
+}
+
+// Next returns the next vertex on the shortest path to the goal of the last query; ok is false
+// if there is none.
+func (v Vertex) Next() (next Vertex, ok bool) {
+	if e, ok := v.TreeEdge(); ok {
+		return e.Head(), true
+	}
+	return Vertex{}, false
+}
+
+// Region returns the arc-flags region of the vertex, -1 if arc flags are not computed.
+func (v Vertex) Region() int { return v.g.regionOf(v.index) }
+
+// OutEdges returns the edges leaving the vertex.
+func (v Vertex) OutEdges() iter.Seq[Edge] {
+	return v.g.edgeRow(v.index, true)
+}
+
+// InEdges returns the edges arriving at the vertex.
+func (v Vertex) InEdges() iter.Seq[Edge] {
+	return v.g.edgeRow(v.index, false)
+}
+
+// String returns the label of the vertex.
+func (v Vertex) String() string {
+	if v.g == nil {
+		return "(none)"
+	}
+	return v.Label()
+}
+
+func (g *Graph) edgeRow(v int, out bool) iter.Seq[Edge] {
+	return func(yield func(Edge) bool) {
+		g.ensureAdjacency()
+		start, rows := g.inStart, g.inEdges
+		if out {
+			start, rows = g.outStart, g.outEdges
+		}
+		for _, e := range rows[start[v]:start[v+1]] {
+			if !yield(Edge{g, int(e)}) {
+				return
+			}
+		}
+	}
+}
+
+// Edge is a directed edge of a Graph, from Tail to Head: a lightweight value (graph and edge
+// number). Edges are changed only through the graph (SetEdgeWeight, EdgeGroupWeights). Two Edge
+// values are equal (==) if they refer to the same edge of the same graph.
 type Edge struct {
-	// Tail is the start vertex.
-	Tail *Vertex
-	// Head is the end vertex.
-	Head *Vertex
-	// Weight of the edge, negative edges are ignored by the algorithm.
-	Weight int64
-	// Group label of the edge.
-	Group string
-
-	// arcFlags[r] is true if this arc lies on a shortest path from its tail to some
-	// vertex of region r. Nil if arc flags have not been computed.
-	arcFlags []bool
+	g  *Graph
+	id int
 }
 
-// NewEdge creates a directional edge from tail to head.
-func NewEdge(tail, head *Vertex, weight int64, group string) *Edge {
-	return &Edge{Tail: tail, Head: head, Weight: weight, Group: group}
-}
+// ID returns the number of the edge in its graph, in order of creation.
+func (e Edge) ID() int { return e.id }
 
-// Delta returns the sidetrack delta (deviation from shortest path).
-// Only valid when the shortest path tree has been calculated.
-func (e *Edge) Delta() int64 {
-	return e.Weight + e.Head.Distance - e.Tail.Distance
-}
+// Tail returns the start vertex.
+func (e Edge) Tail() Vertex { return Vertex{e.g, int(e.g.edgeTail[e.id])} }
 
-// HasArcFlag tells if the arc may be part of a shortest path towards the given region.
-// It returns true if the flag is set, if no flags are available or if region is negative.
-func (e *Edge) HasArcFlag(region int) bool {
-	if region < 0 || e.arcFlags == nil || region >= len(e.arcFlags) {
-		return true
+// Head returns the end vertex.
+func (e Edge) Head() Vertex { return Vertex{e.g, int(e.g.edgeHead[e.id])} }
+
+// Weight returns the weight; edges with a negative weight are ignored by the path search.
+func (e Edge) Weight() int64 { return e.g.edgeWeight[e.id] }
+
+// Group returns the group name (upper case), empty if the edge has no group.
+func (e Edge) Group() string { return e.g.groups[e.g.edgeGroup[e.id]] }
+
+// Delta returns the extra weight of the edge compared to the shortest path, for the last query:
+// weight + distance(head) - distance(tail). Only meaningful if both distances are known.
+func (e Edge) Delta() int64 { return e.Weight() + e.Head().Distance() - e.Tail().Distance() }
+
+// HasArcFlag tells if the edge may be part of a shortest path into an arc-flags region. It
+// returns true if the flag is set, if arc flags are not computed or if region is negative.
+func (e Edge) HasArcFlag(region int) bool { return e.g.hasArcFlag(e.id, region) }
+
+// String returns tail, weight and head, e.g. "A--5-->B".
+func (e Edge) String() string {
+	if e.g == nil {
+		return "(none)"
 	}
-	return e.arcFlags[region]
+	return e.Tail().String() + "--" + strconv.FormatInt(e.Weight(), 10) + "-->" + e.Head().String()
 }
 
-// IsSidetrackOf tells if the edge is a possible sidetrack of the given vertex.
-func (e *Edge) IsSidetrackOf(v *Vertex) bool {
-	return e.Tail == v && e != v.EdgeToPath && e.Weight >= 0
+// Path is a path: the sequence of edges from the start to the goal of a query. Weight is the
+// total weight at the time the path was found. The zero value is the empty path ("no path").
+type Path struct {
+	g      *Graph
+	edges  []int32
+	weight int64
 }
 
-// String returns tail and head labels with the weight, e.g. "A--5-->B".
-func (e *Edge) String() string {
-	return e.Tail.String() + "--" + strconv.FormatInt(e.Weight, 10) + "-->" + e.Head.String()
+// Len returns the number of edges.
+func (p Path) Len() int { return len(p.edges) }
+
+// Edge returns the edge at a position (0 .. Len()-1).
+func (p Path) Edge(i int) Edge { return Edge{p.g, int(p.edges[i])} }
+
+// Edges returns the edges in order.
+func (p Path) Edges() iter.Seq[Edge] {
+	return func(yield func(Edge) bool) {
+		for _, e := range p.edges {
+			if !yield(Edge{p.g, int(e)}) {
+				return
+			}
+		}
+	}
 }
 
-// Path is a path composed by a sequence of edges.
-type Path []*Edge
-
-// IsValid returns false if the path is empty, true if not.
-func (p Path) IsValid() bool {
-	return len(p) > 0
+// Vertices returns the vertices in order, from start to goal (none for an empty path).
+func (p Path) Vertices() iter.Seq[Vertex] {
+	return func(yield func(Vertex) bool) {
+		if len(p.edges) == 0 || !yield(p.Edge(0).Tail()) {
+			return
+		}
+		for e := range p.Edges() {
+			if !yield(e.Head()) {
+				return
+			}
+		}
+	}
 }
 
-// VertexNames returns a comma-separated list containing all vertices of the path.
+// IsValid returns false if the path is empty ("no path").
+func (p Path) IsValid() bool { return len(p.edges) > 0 }
+
+// Weight returns the sum of the edge weights.
+func (p Path) Weight() int64 { return p.weight }
+
+// VertexNames returns the comma-separated vertex labels, e.g. "HOME,PARK,OFFICE", or "(empty)".
 func (p Path) VertexNames() string {
 	if !p.IsValid() {
 		return "(empty)"
 	}
 	var b strings.Builder
-	b.WriteString(p[0].Tail.String())
-	for _, e := range p {
-		b.WriteByte(',')
-		b.WriteString(e.Head.String())
+	for v := range p.Vertices() {
+		if b.Len() > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(v.Label())
 	}
 	return b.String()
 }
 
-// Weight returns the sum of all edge weights of the path.
-func (p Path) Weight() int64 {
-	var total int64
-	for _, e := range p {
-		total += e.Weight
-	}
-	return total
-}
-
-// DeltaWeight returns the sum of all edge deltas of the path.
-func (p Path) DeltaWeight() int64 {
-	var total int64
-	for _, e := range p {
-		total += e.Delta()
-	}
-	return total
-}
-
-// String returns the comma-separated list of deltas of the path.
+// String returns the vertex labels and the weight, e.g. "HOME,PARK,OFFICE (9)".
 func (p Path) String() string {
 	if !p.IsValid() {
 		return "(empty)"
 	}
-	parts := make([]string, len(p))
-	for i, e := range p {
-		parts[i] = strconv.FormatInt(e.Delta(), 10)
-	}
-	return strings.Join(parts, ",")
+	return p.VertexNames() + " (" + strconv.FormatInt(p.weight, 10) + ")"
 }

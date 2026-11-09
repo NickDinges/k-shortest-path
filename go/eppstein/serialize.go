@@ -3,6 +3,7 @@ package eppstein
 import (
 	"errors"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -40,9 +41,10 @@ func (g *Graph) SerializeTo(w io.Writer, highlight []Path) error {
 		return errors.New("eppstein: SerializeTo: nil writer")
 	}
 
+	g.ensureAdjacency()
 	// Colors of every highlighted edge, one entry per path using it
-	edgeColors := map[*Edge][]string{}
-	highlighted := map[*Vertex]bool{}
+	edgeColors := map[int][]string{}
+	highlighted := map[int]bool{}
 	index := 0
 	for _, p := range highlight {
 		if !p.IsValid() {
@@ -50,12 +52,12 @@ func (g *Graph) SerializeTo(w io.Writer, highlight []Path) error {
 		}
 		color := highlightColors[index%len(highlightColors)]
 		index++
-		for _, e := range p {
-			if !contains(edgeColors[e], color) { // path crossing an edge several times
-				edgeColors[e] = append(edgeColors[e], color)
+		for _, e := range p.edges {
+			if !slices.Contains(edgeColors[int(e)], color) { // a path may cross an edge several times
+				edgeColors[int(e)] = append(edgeColors[int(e)], color)
 			}
-			highlighted[e.Tail] = true
-			highlighted[e.Head] = true
+			highlighted[int(g.edgeTail[e])] = true
+			highlighted[int(g.edgeHead[e])] = true
 		}
 	}
 
@@ -65,44 +67,39 @@ func (g *Graph) SerializeTo(w io.Writer, highlight []Path) error {
 	b.WriteString("    node [shape=circle];\n")
 
 	// Vertices, grouped by arc-flags region if available
-	regions := g.arcFlags.enabled && g.arcFlags.valid && g.arcFlags.regionCount > 0
-	if regions {
-		for r := 0; r < g.arcFlags.regionCount; r++ {
+	if g.arcFlagsEnabled && g.arcFlagsValid && g.regionCount > 0 {
+		for r := 0; r < g.regionCount; r++ {
 			b.WriteString("    subgraph cluster_" + strconv.Itoa(r) + " {\n")
 			b.WriteString("        label=\"Region " + strconv.Itoa(r) + "\";\n")
 			b.WriteString("        style=dashed;\n")
-			for _, v := range g.vertices {
-				if v.Region == r {
+			for v := range g.labels {
+				if int(g.vertexRegion[v]) == r {
 					b.WriteString("        " + g.vertexStatement(v, highlighted) + "\n")
 				}
 			}
 			b.WriteString("    }\n")
 		}
-	}
-	for _, v := range g.vertices {
-		if !regions || v.Region < 0 || v.Region >= g.arcFlags.regionCount {
+	} else {
+		for v := range g.labels {
 			b.WriteString("    " + g.vertexStatement(v, highlighted) + "\n")
 		}
 	}
 
-	// Edges, each one written once (from its tail)
-	for _, v := range g.vertices {
-		for _, e := range v.RelatedEdges {
-			if e.Tail != v {
-				continue
-			}
+	// Edges, grouped by tail in vertex order
+	for v := range g.labels {
+		for _, e := range g.outEdges[g.outStart[v]:g.outStart[v+1]] {
 			attributes := []string{
-				"label=" + quote(strconv.FormatInt(e.Weight, 10)),
-				"tooltip=" + quote("group "+e.Group),
+				"label=" + quote(strconv.FormatInt(g.edgeWeight[e], 10)),
+				"tooltip=" + quote("group "+g.groups[g.edgeGroup[e]]),
 			}
 			var styles []string
-			if e.Weight < 0 {
+			if g.edgeWeight[e] < 0 {
 				styles = append(styles, "dashed")
 			}
-			if g.ready && e.Tail.EdgeToPath == e { // shortest path tree edge
+			if g.ready && g.distanceOf(v) != Unreached && g.treeEdge[v] == e { // shortest path tree
 				styles = append(styles, "bold")
 			}
-			if colors, ok := edgeColors[e]; ok {
+			if colors, ok := edgeColors[int(e)]; ok {
 				attributes = append(attributes,
 					"color="+quote(strings.Join(colors, ":")),
 					"fontcolor="+quote(colors[0]),
@@ -111,7 +108,7 @@ func (g *Graph) SerializeTo(w io.Writer, highlight []Path) error {
 			if len(styles) > 0 {
 				attributes = append(attributes, "style="+quote(strings.Join(styles, ",")))
 			}
-			b.WriteString("    " + quote(e.Tail.String()) + " -> " + quote(e.Head.String()) +
+			b.WriteString("    " + quote(g.labels[v]) + " -> " + quote(g.labels[g.edgeHead[e]]) +
 				" [" + strings.Join(attributes, ", ") + "];\n")
 		}
 	}
@@ -122,19 +119,19 @@ func (g *Graph) SerializeTo(w io.Writer, highlight []Path) error {
 }
 
 // vertexStatement builds the DOT statement of a vertex.
-func (g *Graph) vertexStatement(v *Vertex, highlighted map[*Vertex]bool) string {
-	label := v.String()
-	if g.ready && v.Distance != Unreached { // distance to endpoint is known
-		label += "\n" + strconv.FormatInt(v.Distance, 10)
+func (g *Graph) vertexStatement(v int, highlighted map[int]bool) string {
+	label := g.labels[v]
+	if g.ready && g.distanceOf(v) != Unreached { // distance to the goal is known
+		label += "\n" + strconv.FormatInt(g.distance[v], 10)
 	}
 	attributes := []string{"label=" + quote(label)}
-	if g.ready && (v == g.sourceVertex || v == g.endVertex) {
+	if g.ready && (v == g.source || v == g.target) {
 		attributes = append(attributes, "shape=doublecircle")
 	}
 	if highlighted[v] {
 		attributes = append(attributes, "penwidth=2")
 	}
-	return quote(v.String()) + " [" + strings.Join(attributes, ", ") + "];"
+	return quote(g.labels[v]) + " [" + strings.Join(attributes, ", ") + "];"
 }
 
 // quote quotes and escapes a DOT identifier or string.
@@ -154,13 +151,4 @@ func quote(text string) string {
 	}
 	b.WriteByte('"')
 	return b.String()
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }

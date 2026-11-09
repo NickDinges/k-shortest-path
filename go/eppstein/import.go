@@ -9,69 +9,7 @@ import (
 	"strings"
 )
 
-// Fast graph building by vertex index, and bulk import from CSV and DIMACS files.
-//
-// CreateVertices and CreateEdges parse comma-separated label lists on every call. For large
-// graphs it is much faster to add each vertex once (AddVertex returns its index) and then add
-// edges by index (AddEdge). Both ways can be mixed: vertices created by CreateVertices have
-// indices too (see VertexIndex), in the order they were created.
-
-// VertexCount returns the number of vertices; valid indices are 0 .. VertexCount()-1.
-func (g *Graph) VertexCount() int {
-	return len(g.vertices)
-}
-
-// AddVertex adds one vertex, keeping all existing vertices and edges. The label must start
-// with a letter and contain only letters and digits (case-insensitive).
-// It returns the index of the vertex (the existing one if the label is already used), or -1
-// if the label is invalid.
-func (g *Graph) AddVertex(label string) int {
-	label = strings.ToUpper(label)
-	if !isValidLabel(label) {
-		return -1
-	}
-	v := g.getVertex(label)
-	if v == nil {
-		v = g.appendVertex(label)
-		g.ready = false
-		g.adjacencyValid = false
-		g.invalidateArcFlags() // partition does not contain the new vertex
-	}
-	return v.index
-}
-
-// VertexIndex returns the index of the vertex with the given label (case-insensitive),
-// or -1 if it does not exist.
-func (g *Graph) VertexIndex(label string) int {
-	if v := g.getVertex(label); v != nil {
-		return v.index
-	}
-	return -1
-}
-
-// AddEdge adds one directional edge without a group between vertices given by index.
-// It returns false if an index is not valid.
-func (g *Graph) AddEdge(tail, head int, weight int64) bool {
-	return g.AddEdgeGroup(tail, head, weight, "")
-}
-
-// AddEdgeGroup adds one directional edge with a group (case-insensitive, see
-// EdgeGroupWeights) between vertices given by index. It returns false if an index is not valid.
-func (g *Graph) AddEdgeGroup(tail, head int, weight int64, group string) bool {
-	t, h := g.vertexAt(tail), g.vertexAt(head)
-	if t == nil || h == nil {
-		return false
-	}
-	e := NewEdge(t, h, weight, strings.ToUpper(group))
-	t.RelatedEdges = append(t.RelatedEdges, e)
-	if t != h { // avoids duplicated reference for self-pointing edges
-		h.RelatedEdges = append(h.RelatedEdges, e)
-	}
-	g.ready = false
-	g.adjacencyValid = false
-	g.invalidateArcFlags() // new arcs need flags
-	return true
-}
+// Bulk import from CSV and DIMACS files.
 
 // ImportEdges adds edges from CSV text: one edge per line, "tail,head,weight" or
 // "tail,head,weight,group". Vertices are created as needed (same label rules as
