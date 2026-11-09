@@ -70,19 +70,21 @@ func main() {
 
 	// g.EdgeGroupWeights("beta", -1)
 	// Optional arc-flags speed-up (results are identical, preprocessing is done lazily)
+	// g.SetMaxDetourRatio(0.2)                          // only paths at most 20% longer
 	// g.EnableArcFlagsRegions("S,A,B,C;D,E,F;G,H,I,J,K,T") // or: g.EnableArcFlags(3)
 
 	fmt.Println("EPPSTEIN ALGORITHM TEST")
 
 	start := time.Now()
-	p := g.FindShortestPath("S", "T")
-	fmt.Printf("Calculation time: %d ms\n", time.Since(start).Milliseconds())
-
 	var found []eppstein.Path
-	for i := 0; i < k && p.IsValid(); i++ {
+	for p := range g.Paths("S", "T") {
+		if found = append(found, p); len(found) == k {
+			break
+		}
+	}
+	fmt.Printf("Calculation time: %d ms\n", time.Since(start).Milliseconds())
+	for _, p := range found {
 		fmt.Printf("%s (%d)\n", p.VertexNames(), p.Weight())
-		found = append(found, p)
-		p = g.FindNextShortestPath()
 	}
 
 	if dotFile != "" {

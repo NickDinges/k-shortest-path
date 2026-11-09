@@ -8,7 +8,7 @@ The API, the behavior and the Graphviz output are the same as in the C# version.
 [main README](../README.md) explains the concepts (graph, edge, weight, path, arc flags) step by
 step; everything there applies here too. This page shows the Go-specific parts.
 
-No dependencies outside the Go standard library. Requires **Go 1.21 or newer**.
+No dependencies outside the Go standard library. Requires **Go 1.23 or newer** (for `range` over the path iterators).
 
 ## Quick start
 
@@ -95,51 +95,64 @@ properties, so a few names differ:
 | `g.CreateVertices("A,B")` → `bool` | `g.CreateVertices("A,B")` → `bool` |
 | `g.CreateEdges(tails, heads, weight, group)` → `bool` | `g.CreateEdges(tails, heads, weight, group)` → `bool` |
 | `g.EdgeGroupWeights(group, weight)` | `g.EdgeGroupWeights(group, weight)` |
-| `g.AddVertex("A")` → `int` | `g.AddVertex("A")` → `int` |
-| `g.AddEdge(tail, head, weight)` | `g.AddEdge(tail, head, weight)` |
+| `g.SetEdgeWeight(edge, weight)` | `g.SetEdgeWeight(edge, weight)` |
+| `g.AddVertex("A")` → index | `g.AddVertex("A")` → index |
+| `g.AddEdge(tail, head, weight)` → edge number | `g.AddEdge(tail, head, weight)` → edge number |
 | `g.AddEdge(tail, head, weight, group)` | `g.AddEdgeGroup(tail, head, weight, group)` |
-| `g.GetVertexIndex("A")`, `g.VertexCount` | `g.VertexIndex("A")`, `g.VertexCount()` |
-| `g.FindShortestPath(sIndex, tIndex)` | `g.FindShortestPathByIndex(sIndex, tIndex)` |
+| `g.GetVertexIndex("A")`, `g.VertexCount`, `g.EdgeCount` | `g.VertexIndex("A")`, `g.VertexCount()`, `g.EdgeCount()` |
+| `g.FindVertex("A")` → `Vertex?` | `g.FindVertex("A")` → `(Vertex, bool)` |
+| `g.GetVertex(i)`, `g.GetEdge(id)` (throw if invalid) | `g.Vertex(i)`, `g.Edge(id)` (panic if invalid) |
+| `g.Vertices`, `g.Edges` | `g.Vertices()`, `g.Edges()` (iterators) |
 | `g.ImportEdges(reader)` → `int`, throws `FormatException` | `g.ImportEdges(r)` → `(int, error)` |
 | `g.ImportDimacs(reader)` → `int`, throws `FormatException` | `g.ImportDimacs(r)` → `(int, error)` |
-| `g.FindShortestPath(s, t)` → `Path` | `g.FindShortestPath(s, t)` → `Path` |
-| `g.FindNextShortestPath()` → `Path` | `g.FindNextShortestPath()` → `Path` |
-| `g.EnableArcFlags(3)` | `g.EnableArcFlags(3)` |
-| `g.EnableArcFlags("S,A;B,C")` | `g.EnableArcFlagsRegions("S,A;B,C")` |
-| `g.DisableArcFlags()` / `g.PrecomputeArcFlags()` | `g.DisableArcFlags()` / `g.PrecomputeArcFlags()` |
-| `g.ArcFlagsEnabled` / `g.ArcFlagsRegionCount` (properties) | `g.ArcFlagsEnabled()` / `g.ArcFlagsRegionCount()` |
+| `g.FindShortestPath(s, t)` → `GraphPath` | `g.FindShortestPath(s, t)` → `Path` |
+| `g.FindShortestPath(sIndex, tIndex)` | `g.FindShortestPathByIndex(sIndex, tIndex)` |
+| `g.FindNextShortestPath()` → `GraphPath` | `g.FindNextShortestPath()` → `Path` |
+| `foreach (var p in g.EnumeratePaths(s, t))` | `for p := range g.Paths(s, t)` (`PathsByIndex` for indices) |
+| `g.EnumeratePathWeights(s, t)` | `g.PathWeights(s, t)` (`PathWeightsByIndex`) |
+| enumeration after a change: `InvalidOperationException` | iteration after a change: panic |
 | `g.MaxDetour = 15` / `g.MaxDetour` | `g.SetMaxDetour(15)` → `bool` / `g.MaxDetour()` |
 | `g.MaxDetourRatio = 0.2` / `g.MaxDetourRatio` | `g.SetMaxDetourRatio(0.2)` → `bool` / `g.MaxDetourRatio()` |
 | `long.MaxValue` / `double.PositiveInfinity` (no limit) | `math.MaxInt64` / `math.Inf(1)` |
 | invalid limit: `ArgumentOutOfRangeException` | invalid limit: returns `false` |
+| `g.EnableArcFlags(3)` | `g.EnableArcFlags(3)` |
+| `g.EnableArcFlags("S,A;B,C")` | `g.EnableArcFlagsRegions("S,A;B,C")` |
+| `g.DisableArcFlags()` / `g.PrecomputeArcFlags()` | `g.DisableArcFlags()` / `g.PrecomputeArcFlags()` |
+| `g.ArcFlagsEnabled` / `g.ArcFlagsRegionCount` | `g.ArcFlagsEnabled()` / `g.ArcFlagsRegionCount()` |
 | `g.Serialize()` | `g.Serialize()` |
 | `g.Serialize(path)` | `g.SerializePath(path)` |
 | `g.Serialize(listOfPaths)` | `g.SerializePaths([]eppstein.Path{p1, p2})` |
-| `g.Serialize(writer, paths)` (throws on null) | `g.SerializeTo(w, paths)` → `error` |
-| `GraphPath : List<Edge>` | `type Path []*Edge` (in Go always written `eppstein.Path`, so no name clash) |
-| `p.IsValid`, `p.Weight`, `p.VertexNames`, `p.DeltaWeight` | `p.IsValid()`, `p.Weight()`, `p.VertexNames()`, `p.DeltaWeight()` |
-| `p.Count` | `len(p)` |
-| `edge.Tail`, `edge.Head`, `edge.Weight`, `edge.Group` | `edge.Tail`, `edge.Head`, `edge.Weight`, `edge.Group` |
-| `edge.Delta`, `edge.HasArcFlag(r)`, `edge.IsSidetrackOf(v)` | `edge.Delta()`, `edge.HasArcFlag(r)`, `edge.IsSidetrackOf(v)` |
-| `vertex.Next`, `vertex.Distance`, `vertex.EdgeToPath`, `vertex.Region`, `vertex.Object` | `vertex.Next()`, `vertex.Distance`, `vertex.EdgeToPath`, `vertex.Region`, `vertex.Object` |
+| `g.Serialize(writer, paths)` | `g.SerializeTo(w, paths)` → `error` |
+| `GraphPath` (read-only list of `Edge`) | `Path` (value; the zero value is the empty path) |
+| `p.IsValid`, `p.Weight`, `p.VertexNames`, `p.Vertices` | `p.IsValid()`, `p.Weight()`, `p.VertexNames()`, `p.Vertices()` |
+| `p.Count`, `p[i]`, `foreach (var e in p)` | `p.Len()`, `p.Edge(i)`, `for e := range p.Edges()` |
+| `edge.Id`, `edge.Tail`, `edge.Head`, `edge.Weight`, `edge.Group`, `edge.Delta` | `edge.ID()`, `edge.Tail()`, `edge.Head()`, `edge.Weight()`, `edge.Group()`, `edge.Delta()` |
+| `vertex.Index`, `vertex.Label`, `vertex.Distance`, `vertex.Region` | `vertex.Index()`, `vertex.Label()`, `vertex.Distance()`, `vertex.Region()` |
+| `vertex.Next`, `vertex.TreeEdge` (nullable) | `vertex.Next()`, `vertex.TreeEdge()` → `(…, bool)` |
+| `vertex.OutEdges`, `vertex.InEdges` | `vertex.OutEdges()`, `vertex.InEdges()` (iterators) |
+| `vertex.Tag = x` | `vertex.SetTag(x)` / `vertex.Tag()` |
+| `vertex1 == vertex2`, `edge1 == edge2` | `vertex1 == vertex2`, `edge1 == edge2` |
 | `long` weights and distances | `int64` weights and distances |
-| `Vertex.Unreached` (`long.MinValue`, "distance unknown") | `eppstein.Unreached` (`math.MinInt64`) |
+| `Vertex.Unreached` (`long.MinValue`) | `eppstein.Unreached` (`math.MinInt64`) |
 
 ## Things to know
 
 The same rules as in the C# version apply (see
 [section 7 of the main README](../README.md#7-things-to-know-common-pitfalls)):
 
-- **Graphs with cycles have infinitely many paths.** Always limit the loop
-  (`for i := 0; i < k && p.IsValid(); i++`), or set a corridor with `SetMaxDetour` or
-  `SetMaxDetourRatio`: then the number of paths is finite.
+- **Graphs with cycles have infinitely many paths.** Stop the loop yourself
+  (`for p := range g.Paths(s, t) { …; if done { break } }`), or set a corridor with
+  `SetMaxDetour` or `SetMaxDetourRatio`: then the number of paths is finite.
 - **An empty path means "no path":** unknown vertex name, goal not reachable, or start equals goal.
 - **Vertex names:** letters and digits, starting with a letter; not case-sensitive, stored in
   upper case.
 - **Negative weights switch edges off**, e.g. `g.EdgeGroupWeights("train", -1)`.
-- **After changing the graph, call `FindShortestPath` again.**
-- **Equal weights:** paths with the same weight come in insertion order. That order can differ
-  from the C# version, but the set of paths and their weights are the same.
+- **After changing the graph, call `FindShortestPath` again.** A running `range g.Paths(…)`
+  loop panics if the graph changes or another query starts. The graph keeps one query at a time.
+- **Changes go through the graph:** `SetEdgeWeight`, `EdgeGroupWeights`. Vertices and edges are
+  read-only values.
+- **Equal weights:** paths with the same weight come in no guaranteed order. Currently C# and Go
+  return the same order; the shared golden tests (`testdata/golden`) compare them as sets.
 
 Go-specific:
 
@@ -154,16 +167,16 @@ Go-specific:
 Same grid graphs as in [section 10 of the main README](../README.md#10-performance)
 (4-core cloud VM):
 
-| Vertices | Edges | Build graph | First path + next 10,000 paths |
+| Vertices | Edges | First path + next 10,000 paths | Memory allocated |
 |---|---|---|---|
-| 10,000 | 20,700 | 20 ms | 62 ms |
-| 40,000 | 83,400 | 72 ms | 119 ms |
+| 10,000 | 20,700 | 24 ms | 12 MB |
+| 40,000 | 83,400 | 52 ms | 20 MB |
 
 Nearby vertices in the middle of a 1,000,000-vertex grid, first path + next 10,000 paths:
-221 ms without a corridor, **33 ms** with `g.SetMaxDetourRatio(0.1)`.
+102 ms without a corridor, **13 ms** with `g.SetMaxDetourRatio(0.1)`.
 
-Building the 1,000,000-vertex grid (2,097,000 edges): 1.7 s with `CreateVertices` +
-`CreateEdges`, **0.73 s** with `AddVertex` + `AddEdgeGroup`, 1.1 s with `ImportDimacs`.
+Building the 1,000,000-vertex grid (2,097,000 edges): 1.1 s with `CreateVertices` +
+`CreateEdges`, **0.45 s** with `AddVertex` + `AddEdgeGroup`, 0.73 s with `ImportDimacs`.
 
 ```sh
 go test -run none -bench . -benchmem ./eppstein
@@ -173,14 +186,15 @@ go test -run none -bench . -benchmem ./eppstein
 
 | File | Content |
 |---|---|
-| `eppstein/graph.go` | Main algorithm: building the graph, Dijkstra, path enumeration |
+| `eppstein/graph.go` | Storage, building the graph, vertices and edges |
+| `eppstein/paths.go` | Queries: Dijkstra, corridor, path enumeration, iterators |
+| `eppstein/elements.go` | `Vertex`, `Edge` and `Path` value types |
 | `eppstein/arcflags.go` | Optional arc-flags speed-up |
+| `eppstein/import.go` | CSV and DIMACS import |
 | `eppstein/serialize.go` | Graphviz (DOT) output |
-| `eppstein/elements.go` | `Vertex`, `Edge` and `Path` types |
-| `eppstein/building.go` | Building by index (`AddVertex`, `AddEdge`) and CSV/DIMACS import |
 | `eppstein/pqueue.go` | Priority queue (binary heap) used by the algorithm |
 | `eppstein/sidetrackheap.go` | Persistent heap of detours (Eppstein's path enumeration) |
-| `eppstein/*_test.go` | Tests, benchmarks and runnable examples |
+| `eppstein/*_test.go` | Tests, benchmarks and runnable examples; `golden_test.go` checks the shared data in `../testdata/golden` |
 | `cmd/eppstein/main.go` | Demo program (`go run ./cmd/eppstein [k] [--dot file]`) |
 
 ## Moving this module into its own repository
@@ -197,4 +211,6 @@ The module lives in the `go/` folder, so its import path is
      | xargs sed -i 's#github.com/nickdinges/k-shortest-path/go#github.com/nickdinges/k-shortest-path-go#g'
    ```
 
-3. Fix the links to `../README.md` in this file, then run `go test ./...`.
+3. Copy `../testdata/golden` into the new repository as `testdata/golden` and change
+   `goldenDir` in `eppstein/golden_test.go` to `"../testdata/golden"`.
+4. Fix the links to `../README.md` in this file, then run `go test ./...`.

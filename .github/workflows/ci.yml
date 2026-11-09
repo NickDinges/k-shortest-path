@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    name: C# build and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build (warnings are errors)
+        run: dotnet build Eppstein.sln -c Release
+      - name: Test
+        run: dotnet test Eppstein.sln -c Release --no-build
+      - name: Package
+        run: dotnet pack Eppstein/Eppstein.csproj -c Release --no-build -o artifacts
+
+  go:
+    name: Go vet and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "Not gofmt-formatted: $unformatted"; exit 1; fi
+      - name: Vet
+        run: go vet ./...
+      - name: Test (with race detector)
+        run: go test -race ./...
+
+  benchmark:
+    name: Benchmark comparison
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: head
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: head/go/go.mod
+      - name: Install benchstat
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+      - name: Compare base and head
+        run: head/.github/scripts/compare-benchmarks.sh base head >> "$GITHUB_STEP_SUMMARY"

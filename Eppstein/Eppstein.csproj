@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Eppstein</RootNamespace>
+    <AssemblyName>Eppstein</AssemblyName>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- NuGet package (dotnet pack) -->
+    <PackageId>Eppstein.KShortestPaths</PackageId>
+    <Version>2.0.0</Version>
+    <Authors>Nick Dinges</Authors>
+    <Description>k shortest paths (Eppstein's algorithm) with detour corridor, arc flags, CSV/DIMACS import and Graphviz output.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>graph;shortest-path;k-shortest-paths;eppstein;routing</PackageTags>
+    <RepositoryUrl>https://github.com/NickDinges/k-shortest-path</RepositoryUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Eppstein.Tests" />
+  </ItemGroup>
+</Project>

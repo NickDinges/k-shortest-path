@@ -1,267 +1,282 @@
-// Package eppstein finds the k shortest paths between two vertices of a directed
-// graph with Eppstein's algorithm ("Finding the k Shortest Paths", 1998).
+// Package eppstein finds the k shortest paths between two vertices of a directed graph with
+// Eppstein's algorithm ("Finding the k Shortest Paths", 1998).
 //
-// Paths may repeat vertices and edges. After one shortest path tree computation,
-// every further path is produced on demand:
+// Paths may repeat vertices and edges. After one shortest path tree computation, every further
+// path is produced on demand:
 //
 //	g := eppstein.NewGraph()
 //	g.CreateVertices("S,A,T")
 //	g.CreateEdges("S,A,S", "A,T,T", 1, "roads")
-//	for p, i := g.FindShortestPath("S", "T"), 0; p.IsValid() && i < 10; p, i = g.FindNextShortestPath(), i+1 {
+//	for p := range g.Paths("S", "T") {
 //		fmt.Println(p.VertexNames(), p.Weight())
 //	}
+//
+// Vertices and edges are stored in arrays; Vertex and Edge are lightweight values referring to
+// them. A graph is changed only through its methods, so precomputed data (edge lists by
+// direction, arc flags, the current query) is invalidated automatically.
+//
+// Error handling: methods that create or look up something from user data report a failure in
+// their result (false or -1). Programming errors (an index out of range, an edge of another
+// graph, changing the graph while ranging over its paths) panic, like an index out of range on a
+// slice. Malformed import files return an error. A Graph is not safe for concurrent use.
 package eppstein
 
 import (
-	"math"
+	"fmt"
+	"iter"
 	"strings"
 	"unicode"
 )
 
-// stNode is a track (path) described only by its sidetracks. It stores its parent
-// (same sidetracks without the last one) and one sidetrack, so creating a candidate
-// costs O(1) time and memory instead of copying the whole sidetrack list.
-type stNode struct {
-	parent    *stNode   // nil for the root (shortest path, no sidetracks)
-	sidetrack *Edge     // last sidetrack, nil for the root
-	heap      *heapNode // heap node of the last sidetrack, nil for the root
-	weight    int64     // sum of sidetrack deltas
-}
-
-// sidetracks builds the full sidetrack list from the chain of parent nodes.
-func (n *stNode) sidetracks() Path {
-	count := 0
-	for x := n; x.sidetrack != nil; x = x.parent {
-		count++
-	}
-	result := make(Path, count)
-	for x := n; x.sidetrack != nil; x = x.parent {
-		count--
-		result[count] = x.sidetrack
-	}
-	return result
-}
-
-// Graph is a directed graph, composed by vertices and directed edges.
+// Graph is a directed graph with weighted edges.
 type Graph struct {
-	// vertices in creation order
-	vertices []*Vertex
-	// labelIndex finds vertices by (upper case) label in constant time
-	labelIndex map[string]*Vertex
-	// pathsHeap holds candidate tracks ordered by total delta
-	pathsHeap *priorityQueue[*stNode]
-	// ready tells if shortest paths have been calculated for current graph
-	ready bool
-	// sourceVertex and endVertex are valid after FindShortestPath
-	sourceVertex *Vertex
-	endVertex    *Vertex
+	// vertices
+	labels     []string
+	labelIndex map[string]int
+	tags       []any
 
-	// pathBound is the maximum sum of sidetrack deltas of returned paths (corridor)
-	pathBound int64
-	// maximum detour (corridor), see SetMaxDetour and SetMaxDetourRatio
-	maxDetour         int64
-	hasMaxDetour      bool
-	maxDetourRatio    float64
-	hasMaxDetourRatio bool
-	// candidatesCreated counts candidate paths since the last FindShortestPath (for tests)
-	candidatesCreated int64
-	// adjacencyValid tells if inEdges/outEdges of all vertices match RelatedEdges
-	adjacencyValid bool
+	// edges, as parallel slices
+	edgeTail, edgeHead []int32
+	edgeWeight         []int64
+	edgeGroup          []int32
+	groups             []string // group 0: no group
+	groupIndex         map[string]int32
 
-	arcFlags arcFlagsState
+	// edges by direction (compressed rows), rebuilt on demand after a change: the edges leaving
+	// vertex v are outEdges[outStart[v]:outStart[v+1]]
+	adjacencyValid     bool
+	outStart, outEdges []int32
+	inStart, inEdges   []int32
+	changeCount        int // incremented on every change of the graph and of query settings
+	queryState             // current query (paths.go)
+	arcFlagsState          // arc flags (arcflags.go)
 }
 
-// SetMaxDetour limits the returned paths to at most detour longer than the shortest path.
-// math.MaxInt64 removes the limit (default). With a limit, the shortest path tree is only
-// computed for vertices whose distance to t is at most (shortest path + detour), which makes
-// queries between nearby vertices of a large graph much faster. FindNextShortestPath returns
-// an empty path once all paths within the limit have been returned.
-// Changing it requires a new call of FindShortestPath. It returns false if detour is negative.
-func (g *Graph) SetMaxDetour(detour int64) bool {
-	if detour < 0 {
-		return false
-	}
-	g.maxDetour = detour
-	g.hasMaxDetour = detour != math.MaxInt64
-	g.ready = false
-	return true
-}
-
-// MaxDetour returns the maximum absolute detour, math.MaxInt64 if there is no limit.
-func (g *Graph) MaxDetour() int64 {
-	if !g.hasMaxDetour {
-		return math.MaxInt64
-	}
-	return g.maxDetour
-}
-
-// SetMaxDetourRatio limits the returned paths relative to the shortest path weight, e.g. 0.2
-// for paths at most 20% longer. math.Inf(1) removes the limit (default). If both limits are
-// set, the smaller one applies. Changing it requires a new call of FindShortestPath.
-// It returns false if ratio is negative or NaN.
-func (g *Graph) SetMaxDetourRatio(ratio float64) bool {
-	if math.IsNaN(ratio) || ratio < 0 {
-		return false
-	}
-	g.maxDetourRatio = ratio
-	g.hasMaxDetourRatio = !math.IsInf(ratio, 1)
-	g.ready = false
-	return true
-}
-
-// MaxDetourRatio returns the maximum relative detour, math.Inf(1) if there is no limit.
-func (g *Graph) MaxDetourRatio() float64 {
-	if !g.hasMaxDetourRatio {
-		return math.Inf(1)
-	}
-	return g.maxDetourRatio
-}
-
-// detourBound returns the allowed detour for a given shortest path weight.
-func (g *Graph) detourBound(shortest int64) int64 {
-	bound := g.MaxDetour()
-	if g.hasMaxDetourRatio {
-		if relative := math.Floor(g.maxDetourRatio * float64(shortest)); relative < float64(bound) {
-			bound = int64(relative)
-		}
-	}
-	return bound
-}
-
-// saturatingAdd adds two non-negative values, saturating at math.MaxInt64.
-func saturatingAdd(a, b int64) int64 {
-	if a > math.MaxInt64-b {
-		return math.MaxInt64
-	}
-	return a + b
-}
-
-// NewGraph creates an empty graph.
+// NewGraph creates an empty graph. The zero value Graph{} is usable as well.
 func NewGraph() *Graph {
-	return &Graph{labelIndex: map[string]*Vertex{}}
+	return &Graph{}
 }
 
-// CreateVertices creates all vertices of the graph from a comma-separated list of labels,
-// removing all previous vertices and edges.
-// A label must start with a letter and contain only letters and digits; labels are
-// converted to upper case. Repeated and empty labels are ignored.
-// It returns false if a label is invalid.
-func (g *Graph) CreateVertices(vertices string) bool {
-	g.ready = false  // must rebuild trees
-	g.vertices = nil // remove all previous vertices
-	g.labelIndex = map[string]*Vertex{}
-	g.adjacencyValid = false
-	g.resetArcFlags() // partition refers to removed vertices
-
-	for _, label := range strings.Split(strings.ToUpper(vertices), ",") {
-		if label == "" { // ignore empty labels
-			continue
-		}
-		if !isValidLabel(label) {
-			return false
-		}
-		if g.getVertex(label) == nil {
-			g.appendVertex(label)
-		}
+func (g *Graph) init() {
+	if g.labelIndex == nil {
+		g.labelIndex = map[string]int{}
+		g.groupIndex = map[string]int32{"": 0}
+		g.groups = []string{""}
 	}
-	return true
 }
 
-// CreateEdges creates directional edges from tails to heads (comma-separated lists of
-// labels, paired by position), all with the same weight and group.
-// It returns false if a vertex does not exist or the lists have different lengths.
-func (g *Graph) CreateEdges(tails, heads string, weight int64, group string) bool {
-	tailList := g.parseVertices(tails)
-	headList := g.parseVertices(heads)
-	if tailList == nil || headList == nil || len(tailList) != len(headList) {
-		return false
-	}
-	group = strings.ToUpper(group)
+// VertexCount returns the number of vertices; valid indices are 0 .. VertexCount()-1.
+func (g *Graph) VertexCount() int { return len(g.labels) }
 
-	for i := range tailList {
-		e := NewEdge(tailList[i], headList[i], weight, group)
-		tailList[i].RelatedEdges = append(tailList[i].RelatedEdges, e)
-		if tailList[i] != headList[i] { // avoids duplicated reference for self-pointing edges
-			headList[i].RelatedEdges = append(headList[i].RelatedEdges, e)
-		}
+// EdgeCount returns the number of edges; valid edge numbers are 0 .. EdgeCount()-1.
+func (g *Graph) EdgeCount() int { return len(g.edgeTail) }
+
+// Vertex returns the vertex with an index. It panics if the index is not valid.
+func (g *Graph) Vertex(index int) Vertex {
+	if index < 0 || index >= len(g.labels) {
+		panic(fmt.Sprintf("eppstein: no vertex with index %d", index))
 	}
-	g.ready = false
-	g.adjacencyValid = false
-	g.invalidateArcFlags() // new arcs need flags
-	return true
+	return Vertex{g, index}
 }
 
-// EdgeGroupWeights sets the weight of all edges of a group.
-func (g *Graph) EdgeGroupWeights(group string, weight int64) {
-	group = strings.ToUpper(group)
-	for _, v := range g.vertices {
-		for _, e := range v.RelatedEdges {
-			if e.Group == group {
-				e.Weight = weight
+// Edge returns the edge with a number. It panics if the number is not valid.
+func (g *Graph) Edge(id int) Edge {
+	g.checkEdge(id)
+	return Edge{g, id}
+}
+
+// FindVertex returns the vertex with a label (case-insensitive); ok is false if there is none.
+func (g *Graph) FindVertex(label string) (v Vertex, ok bool) {
+	if index := g.VertexIndex(label); index >= 0 {
+		return Vertex{g, index}, true
+	}
+	return Vertex{}, false
+}
+
+// VertexIndex returns the index of the vertex with a label (case-insensitive), or -1 if it does
+// not exist.
+func (g *Graph) VertexIndex(label string) int {
+	if label == "" {
+		return -1
+	}
+	if index, ok := g.labelIndex[label]; ok {
+		return index
+	}
+	if index, ok := g.labelIndex[strings.ToUpper(label)]; ok {
+		return index
+	}
+	return -1
+}
+
+// Vertices returns all vertices in order of their index.
+func (g *Graph) Vertices() iter.Seq[Vertex] {
+	return func(yield func(Vertex) bool) {
+		for v := range g.labels {
+			if !yield(Vertex{g, v}) {
+				return
 			}
 		}
 	}
-	g.ready = false
-	g.invalidateArcFlags() // shortest paths may have changed
 }
 
-// FindShortestPath calculates the shortest path tree towards t and returns the shortest
-// path from s to t. It returns an empty path if no path exists or a label is not valid.
-// Further paths are obtained with FindNextShortestPath.
-func (g *Graph) FindShortestPath(s, t string) Path {
-	return g.findShortestPath(g.getVertex(s), g.getVertex(t))
-}
-
-// FindShortestPathByIndex is FindShortestPath for vertices given by index (as returned by
-// AddVertex or VertexIndex). It returns an empty path if an index is not valid.
-func (g *Graph) FindShortestPathByIndex(s, t int) Path {
-	return g.findShortestPath(g.vertexAt(s), g.vertexAt(t))
-}
-
-// findShortestPath calculates the shortest path tree towards t and returns the shortest path.
-func (g *Graph) findShortestPath(s, t *Vertex) Path {
-	g.ready = false
-
-	g.sourceVertex = s
-	g.endVertex = t
-	if g.sourceVertex == nil || g.endVertex == nil {
-		return Path{}
+// Edges returns all edges in order of creation.
+func (g *Graph) Edges() iter.Seq[Edge] {
+	return func(yield func(Edge) bool) {
+		for e := range g.edgeTail {
+			if !yield(Edge{g, e}) {
+				return
+			}
+		}
 	}
-
-	// Splits edges into incoming and outgoing slices if the graph changed
-	g.ensureAdjacency()
-	// Recomputes arc flags lazily if enabled and graph changed since last preprocessing
-	g.ensureArcFlags()
-	// Builds shortest path tree for all vertices to t (Dijkstra)
-	g.buildShortestPathTree()
-	// Maximum sum of sidetrack deltas (corridor), -1 if t cannot be reached
-	g.pathBound = -1
-	if g.sourceVertex.Distance != Unreached {
-		g.pathBound = g.detourBound(g.sourceVertex.Distance)
-	}
-	// Initializes the heap of tracks, it is expanded lazily
-	g.buildSidetracksHeap()
-	g.ready = true
-
-	return g.FindNextShortestPath()
 }
 
-// FindNextShortestPath returns the next shortest path, or an empty path if there are no
-// more paths or FindShortestPath has not been called since the last graph change.
-//
-// Paths may repeat vertices and edges, so a graph with a cycle reachable between s and t
-// has infinitely many paths: limit the number of calls.
-func (g *Graph) FindNextShortestPath() Path {
-	if !g.ready {
-		return Path{}
+// CreateVertices creates all vertices from a comma-separated list of labels, removing all
+// previous vertices and edges. Repeated and empty labels are ignored. A label starts with a
+// letter and contains only letters and digits (case-insensitive, stored in upper case).
+// It returns false at the first invalid label (the vertices before it are created).
+func (g *Graph) CreateVertices(vertices string) bool {
+	g.clear()
+	for _, label := range strings.Split(vertices, ",") {
+		if label == "" {
+			continue
+		}
+		if g.AddVertex(label) < 0 {
+			return false
+		}
 	}
-	node, _, ok := g.pathsHeap.Dequeue()
+	return true
+}
+
+// AddVertex adds one vertex, keeping all existing vertices and edges. It returns the index of
+// the vertex (the existing one if the label is already used), or -1 if the label is invalid.
+func (g *Graph) AddVertex(label string) int {
+	g.init()
+	label = strings.ToUpper(label)
+	if !isValidLabel(label) {
+		return -1
+	}
+	if index, ok := g.labelIndex[label]; ok {
+		return index
+	}
+	index := len(g.labels)
+	g.labels = append(g.labels, label)
+	g.labelIndex[label] = index
+	g.changed(true)
+	return index
+}
+
+// CreateEdges creates directed edges from tails to heads (comma-separated lists of labels,
+// paired by position), all with the same weight and group (empty for none). It returns false,
+// creating no edge, if a vertex does not exist or the lists have different lengths.
+func (g *Graph) CreateEdges(tails, heads string, weight int64, group string) bool {
+	tailLabels := strings.Split(tails, ",")
+	headLabels := strings.Split(heads, ",")
+	if len(tailLabels) != len(headLabels) {
+		return false
+	}
+	tailIndices := make([]int, len(tailLabels))
+	headIndices := make([]int, len(headLabels))
+	for i := range tailLabels {
+		tailIndices[i] = g.VertexIndex(tailLabels[i])
+		headIndices[i] = g.VertexIndex(headLabels[i])
+		if tailIndices[i] < 0 || headIndices[i] < 0 {
+			return false
+		}
+	}
+	for i := range tailIndices {
+		g.AddEdgeGroup(tailIndices[i], headIndices[i], weight, group)
+	}
+	return true
+}
+
+// AddEdge adds one directed edge without a group between vertices given by index. It returns
+// the number of the new edge, or -1 if an index is not valid.
+func (g *Graph) AddEdge(tail, head int, weight int64) int {
+	return g.AddEdgeGroup(tail, head, weight, "")
+}
+
+// AddEdgeGroup adds one directed edge with a group (case-insensitive, see EdgeGroupWeights;
+// empty for none) between vertices given by index. It returns the number of the new edge, or
+// -1 if an index is not valid.
+func (g *Graph) AddEdgeGroup(tail, head int, weight int64, group string) int {
+	if tail < 0 || tail >= len(g.labels) || head < 0 || head >= len(g.labels) {
+		return -1
+	}
+	g.init()
+	id := len(g.edgeTail)
+	g.edgeTail = append(g.edgeTail, int32(tail))
+	g.edgeHead = append(g.edgeHead, int32(head))
+	g.edgeWeight = append(g.edgeWeight, weight)
+	g.edgeGroup = append(g.edgeGroup, g.groupID(group))
+	g.changed(true)
+	return id
+}
+
+// SetEdgeWeight changes the weight of one edge. It panics if the edge belongs to another graph.
+func (g *Graph) SetEdgeWeight(e Edge, weight int64) {
+	if e.g != g {
+		panic("eppstein: SetEdgeWeight: the edge belongs to another graph")
+	}
+	g.edgeWeight[e.id] = weight
+	g.changed(false)
+}
+
+// EdgeGroupWeights sets the weight of all edges of a group (case-insensitive); for example a
+// negative weight switches them off.
+func (g *Graph) EdgeGroupWeights(group string, weight int64) {
+	id, ok := g.groupIndex[strings.ToUpper(group)]
 	if !ok {
-		return Path{}
+		return
 	}
-	// Lazy expansion: enqueues at most 3 successors of this track
-	g.addSidetracks(node)
-	return g.rebuildPath(node.sidetracks())
+	for e, eg := range g.edgeGroup {
+		if eg == id {
+			g.edgeWeight[e] = weight
+		}
+	}
+	g.changed(false)
+}
+
+// clear removes all vertices and edges and disables arc flags.
+func (g *Graph) clear() {
+	g.labels = nil
+	g.labelIndex = nil
+	g.tags = nil
+	g.edgeTail, g.edgeHead, g.edgeWeight, g.edgeGroup = nil, nil, nil, nil
+	g.groups, g.groupIndex = nil, nil
+	g.init()
+	g.DisableArcFlags()
+	g.changed(true)
+}
+
+// changed invalidates the current query and precomputed data. structure is true if vertices or
+// edges were added or removed (not only weights).
+func (g *Graph) changed(structure bool) {
+	g.changeCount++
+	g.ready = false
+	if structure {
+		g.adjacencyValid = false
+	}
+	g.arcFlagsValid = false
+}
+
+func (g *Graph) groupID(group string) int32 {
+	if group == "" {
+		return 0
+	}
+	group = strings.ToUpper(group)
+	id, ok := g.groupIndex[group]
+	if !ok {
+		id = int32(len(g.groups))
+		g.groups = append(g.groups, group)
+		g.groupIndex[group] = id
+	}
+	return id
+}
+
+func (g *Graph) checkEdge(id int) {
+	if id < 0 || id >= len(g.edgeTail) {
+		panic(fmt.Sprintf("eppstein: no edge with number %d", id))
+	}
 }
 
 // isValidLabel tells if a label starts with a letter and contains only letters and digits.
@@ -277,220 +292,32 @@ func isValidLabel(label string) bool {
 	return true
 }
 
-// appendVertex adds a vertex with a valid, unused, upper case label.
-func (g *Graph) appendVertex(label string) *Vertex {
-	if g.labelIndex == nil { // zero value Graph{} instead of NewGraph()
-		g.labelIndex = map[string]*Vertex{}
-	}
-	v := NewVertex(label)
-	v.index = len(g.vertices)
-	g.vertices = append(g.vertices, v)
-	g.labelIndex[label] = v
-	return v
-}
-
-// vertexAt returns the vertex at an index, nil if the index is not valid.
-func (g *Graph) vertexAt(index int) *Vertex {
-	if index < 0 || index >= len(g.vertices) {
-		return nil
-	}
-	return g.vertices[index]
-}
-
-// parseVertices parses a comma-separated list of labels, nil if a vertex does not exist.
-func (g *Graph) parseVertices(labels string) []*Vertex {
-	var result []*Vertex
-	for _, label := range strings.Split(strings.ToUpper(labels), ",") {
-		v := g.getVertex(label)
-		if v == nil {
-			return nil
-		}
-		result = append(result, v)
-	}
-	return result
-}
-
-// getVertex returns the vertex with the given label, nil if not found or empty label.
-func (g *Graph) getVertex(label string) *Vertex {
-	if label == "" {
-		return nil
-	}
-	if g.labelIndex == nil { // zero value Graph{} instead of NewGraph()
-		g.labelIndex = map[string]*Vertex{}
-	}
-	return g.labelIndex[strings.ToUpper(label)]
-}
-
-// ensureAdjacency builds the incoming and outgoing edge slices of all vertices from
-// RelatedEdges if the graph changed. Done once per graph change instead of in CreateEdges,
-// so building a graph stays cheap, while Dijkstra and the path enumeration only visit edges
-// of the right direction.
+// ensureAdjacency builds the edge lists by direction (counting sort by vertex) if the graph
+// changed.
 func (g *Graph) ensureAdjacency() {
 	if g.adjacencyValid {
 		return
 	}
-	for _, v := range g.vertices {
-		outCount, inCount := 0, 0
-		for _, e := range v.RelatedEdges {
-			if e.Tail == v {
-				outCount++
-			}
-			if e.Head == v {
-				inCount++
-			}
-		}
-		v.outEdges = make([]*Edge, 0, outCount)
-		v.inEdges = make([]*Edge, 0, inCount)
-		for _, e := range v.RelatedEdges {
-			if e.Tail == v {
-				v.outEdges = append(v.outEdges, e)
-			}
-			if e.Head == v {
-				v.inEdges = append(v.inEdges, e)
-			}
-		}
-	}
+	g.outStart, g.outEdges = buildRows(g.edgeTail, len(g.labels))
+	g.inStart, g.inEdges = buildRows(g.edgeHead, len(g.labels))
 	g.adjacencyValid = true
 }
 
-// resetGraphState clears shortest path tree pointers and distances.
-func (g *Graph) resetGraphState() {
-	for _, v := range g.vertices {
-		v.EdgeToPath = nil
-		v.Distance = Unreached
-		v.sidetrackHeap = nil
-		v.sidetrackHeapBuilt = false
+// buildRows groups the edges by a vertex (tail or head): start[v] is the start of v's row in
+// rows, which lists the edge numbers in order of creation.
+func buildRows(vertexOfEdge []int32, vertexCount int) (start, rows []int32) {
+	start = make([]int32, vertexCount+1)
+	for _, v := range vertexOfEdge {
+		start[v+1]++
 	}
-}
-
-// buildShortestPathTree runs Dijkstra backwards from the endpoint. Negative edges are ignored.
-// With a maximum detour, the search stops at distance (shortest path + detour): farther
-// vertices cannot be part of any returned path.
-func (g *Graph) buildShortestPathTree() {
-	g.resetGraphState()
-
-	v := g.endVertex
-	v.Distance = 0
-	fringe := newPriorityQueue[*Edge](1024)
-	// Region of endpoint for arc-flag pruning (-1 = no pruning)
-	targetRegion := g.arcFlagsRegionOf(g.endVertex)
-	// Search radius, reduced to (shortest path + detour) once s is settled
-	radius := int64(math.MaxInt64)
-	if g.sourceVertex == g.endVertex {
-		radius = g.detourBound(0)
+	for v := 0; v < vertexCount; v++ {
+		start[v+1] += start[v]
 	}
-
-	for {
-		if v != nil {
-			for _, e := range v.inEdges {
-				// skip negative edges, settled tails and arcs pruned by arc flags
-				if e.Weight >= 0 && e.Tail.Distance == Unreached && e.HasArcFlag(targetRegion) {
-					fringe.Enqueue(e, e.Weight+v.Distance)
-				}
-			}
-		}
-
-		e, distance, ok := fringe.Dequeue()
-		if !ok || distance > radius { // no pending edges, or outside of corridor
-			break
-		}
-		v = e.Tail
-		if v.Distance == Unreached { // distance not calculated yet
-			v.Distance = distance
-			v.EdgeToPath = e
-			if v == g.sourceVertex {
-				radius = saturatingAdd(distance, g.detourBound(distance))
-			}
-		} else {
-			v = nil
-		}
+	rows = make([]int32, len(vertexOfEdge))
+	next := append([]int32(nil), start...)
+	for e, v := range vertexOfEdge {
+		rows[next[v]] = int32(e)
+		next[v]++
 	}
-}
-
-// buildSidetracksHeap initializes the heap with the shortest path (no sidetracks).
-func (g *Graph) buildSidetracksHeap() {
-	g.pathsHeap = newPriorityQueue[*stNode](64)
-	g.pathsHeap.Enqueue(&stNode{}, 0)
-	g.candidatesCreated = 1
-}
-
-// addSidetracks enqueues the successors of an extracted track (Eppstein's path graph):
-// the two heap children of its last sidetrack (same prefix, next best alternatives for the
-// last sidetrack) and the best sidetrack after the last one (root of H(head)).
-// Every sidetrack list is reached exactly once, heap keys never decrease from parent to child
-// and deltas are non-negative, so tracks come out in order of weight. At most 3 candidates
-// per extracted path; works with cycles.
-func (g *Graph) addSidetracks(node *stNode) {
-	last := node.heap
-	if last == nil { // shortest path (no sidetracks): best first sidetrack
-		g.enqueueCandidate(node, g.sidetrackHeapOf(g.sourceVertex))
-		return
-	}
-	g.enqueueCandidate(node.parent, last.left) // alternatives for the last sidetrack
-	g.enqueueCandidate(node.parent, last.right)
-	g.enqueueCandidate(node, g.sidetrackHeapOf(last.edge.Head)) // one more sidetrack
-}
-
-// enqueueCandidate enqueues the parent's sidetracks plus the sidetrack of h, unless it
-// exceeds the maximum detour.
-func (g *Graph) enqueueCandidate(parent *stNode, h *heapNode) {
-	if h == nil || parent.weight+h.key > g.pathBound {
-		return
-	}
-	child := &stNode{parent: parent, sidetrack: h.edge, heap: h, weight: parent.weight + h.key}
-	g.pathsHeap.Enqueue(child, child.weight)
-	g.candidatesCreated++
-}
-
-// sidetrackHeapOf returns the heap of all sidetracks on the tree path from v to t, building
-// it (and the heaps of the following vertices) if needed. Nil if there are none or v cannot
-// reach t.
-func (g *Graph) sidetrackHeapOf(v *Vertex) *heapNode {
-	if v.Distance == Unreached {
-		return nil
-	}
-	// Vertices on the tree path whose heap is not built yet (iterative, no deep recursion)
-	var pending []*Vertex
-	for x := v; x != nil && !x.sidetrackHeapBuilt; x = x.Next() {
-		pending = append(pending, x)
-	}
-	// Builds heaps from t towards v: H(x) = H(next(x)) + sidetracks leaving x
-	var own []*heapNode
-	for i := len(pending) - 1; i >= 0; i-- {
-		x := pending[i]
-		own = own[:0]
-		for _, e := range x.outEdges {
-			if e.IsSidetrackOf(x) && e.Head.Distance != Unreached { // head must reach t
-				own = append(own, &heapNode{edge: e, key: e.Delta(), rank: 1})
-			}
-		}
-		var next *heapNode
-		if n := x.Next(); n != nil {
-			next = n.sidetrackHeap
-		}
-		x.sidetrackHeap = mergeHeaps(next, heapFromNodes(own))
-		x.sidetrackHeapBuilt = true
-	}
-	return v.sidetrackHeap
-}
-
-// rebuildPath reconstructs the full path from s to t crossing the given sidetracks.
-func (g *Graph) rebuildPath(sidetracks Path) Path {
-	path := Path{}
-	v := g.sourceVertex
-	i := 0
-	for v != nil {
-		if i < len(sidetracks) && sidetracks[i].Tail == v { // cross next sidetrack
-			path = append(path, sidetracks[i])
-			v = sidetracks[i].Head
-			i++
-		} else { // continue on shortest path
-			if v.EdgeToPath == nil {
-				break
-			}
-			path = append(path, v.EdgeToPath)
-			v = v.Next()
-		}
-	}
-	return path
+	return start, rows
 }

@@ -1,0 +1,4 @@
+# Normalize line endings in the repository (LF), native line endings in the working tree
+* text=auto
+*.svg binary
+*.doc binary
