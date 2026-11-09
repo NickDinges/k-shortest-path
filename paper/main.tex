@@ -30,9 +30,10 @@
 
 \title{From a 2010 Prototype to Contraction Hierarchies in Three Languages:\\
 Engineering $k$ Shortest Paths with Eppstein, Yen--Lawler, Arc Flags and PHAST\\
-\large An experiment in AI-assisted algorithm engineering}
-\author{Nick Dinges\thanks{Implementation, tests, measurements and a first draft of this text were produced by an AI
-coding agent (Claude Code~\cite{claudecode}) under the author's direction; see \cref{sec:ai}.}}
+\large An experiment in algorithm engineering with Claude}
+\author{Nick Dinges\thanks{This paper is the result of an experiment: the code in all three languages, the tests,
+the measurements and the text were generated with Claude, Anthropic's AI model, through Claude Code~\cite{claudecode},
+under the author's direction. See \cref{sec:ai}.}}
 \date{November 2026}
 
 \begin{document}
@@ -53,9 +54,9 @@ collection: disabling Go's collector or making .NET's rare has no measurable eff
 same flat, allocation-free data layout. The algorithmic choices dominate by far: the original 2010
 implementation needs \NumVOneFirst{} for the first path on a $\NumVOneSize\times\NumVOneSize$ acyclic grid where the
 current one needs \NumVTwoFirst, and a corridor turns a \NumLocalRepeated{} query into \NumLocalRatioRepeated.
-Finally, we describe the development process: the whole transformation took about two days of calendar time and about
-\NumPrompts{} short, often informal prompts to an AI coding agent, plus the author's old code and
-ideas from a domain expert. We report what worked, what the agent got wrong, and how tests caught it.
+Finally, we describe how the work was done: the whole transformation, including this paper, was generated with
+Claude in about two days, directed by the author and based on his old code and on ideas from a domain expert. We report
+what worked, what the AI got wrong, and how tests caught it.
 \end{abstract}
 
 \section{Introduction}
@@ -72,10 +73,10 @@ are a recent improvement~\cite{kurz2016,alzoobi2023}.
 This paper is an engineering report. Its starting point is a 486-line \cs{} implementation of Eppstein's idea
 written by the author in 2010. It computed correct paths on the example of Eppstein's paper, but it enumerated all
 paths eagerly in the first query, its priority queue was a sorted list, and it did not terminate on graphs with
-cycles. In November 2026 the author used an AI coding agent to turn it into a modern library. The project grew in
-small steps, each one triggered by a short prompt: fix the recursion, port to Linux, add Graphviz output, port to Go,
-make it fast, add simple paths, add arc flags with real partitions, add contraction hierarchies, port to Rust, and
-finally: write this paper.
+cycles. In November 2026 the author ran an experiment: could Claude, an AI model used as a coding agent, turn it into a
+modern library? The project grew in small steps, each one requested by the author: fix the non-termination, port to
+Linux, add Graphviz output, port to Go, make it fast, add simple paths, add arc flags with real partitions, add
+contraction hierarchies, port to Rust, and finally write this paper.
 
 \paragraph{Contributions.}
 \begin{itemize}
@@ -89,7 +90,7 @@ finally: write this paper.
         of garbage-collected and non-garbage-collected languages on the same algorithms and data layout
         (\cref{sec:languages,sec:experiments}).
   \item A case study of AI-assisted algorithm engineering (\cref{sec:ai}): which inputs came from the human (an old
-        algorithm, informal prompts, expert ideas), what the agent did, and where it failed.
+        algorithm, short requests, expert ideas), what Claude did, and where it failed.
 \end{itemize}
 
 \section{Background and related work}\label{sec:related}
@@ -289,68 +290,25 @@ the neighborhood. \input{tables/text-local}
 \section{AI-assisted development}\label{sec:ai}
 
 \subsection{Process}
-The author worked with an AI coding agent~\cite{claudecode} in a cloud development environment with access to the
-repository. The agent read and wrote code, ran builds, tests, benchmarks and a fuzzer, searched the literature,
-opened pull requests and reacted to CI results; the author decided what to do next and merged. All work happened in
-\NumSessions{} sessions over two days (\NumDays), with \NumPrompts{} human messages, most of them one line long.
-\NumPullRequests{} pull requests were merged before this paper. \Cref{tab:prompts} lists representative prompts verbatim
-(German, as typed, including typos), with translations and outcomes.
-
-\begin{table}[p]
-\centering
-\caption{Selected prompts, verbatim, and what followed. ``PR'' = merged pull request.}
-\label{tab:prompts}
-\footnotesize
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.5\textwidth}>{\raggedright\arraybackslash}X}
-\toprule
-Prompt (translation) & Outcome \\
-\midrule
-\emph{Erstelle eine erwiterung ohne das interface zu brechen um arcs als Optimierung einzuführen} (Create an
-extension, without breaking the interface, to introduce arcs as an optimization) & The agent interpreted ``arcs'' as
-\emph{arc flags}, implemented them as an optional extension with automatic and manual partitions. \\
-\emph{Bitte rekursionsproblem fixen und auf .net core umstellen damit es unter linux kompiliert} (Please fix the
-recursion problem and move to .NET Core so it compiles on Linux) & Diagnosed the eager recursive sidetrack
-enumeration (endless on cycles), replaced it, ported to .NET~8. \\
-\emph{Convert it to a golang version, keep the interface unchanged.} & Go port with the same API and tests. \\
-\emph{Was könnte an diesem Projekt zum game changer werden?} (What could become a game changer for this project?)
-& A ranked list of ideas (corridor, Eppstein's heap enumeration, 64-bit weights, simple paths, \ldots). \\
-\emph{Wie kann man die Geschwindigkeit deutlich erhöhen} (How can the speed be increased significantly) &
-Profiling-driven list; then ``\emph{Punkt 1 und 2 und 3}'' (points 1, 2 and 3): persistent heaps, corridor,
-faster Dijkstra. PR. \\
-\emph{Schau dir das Projekt nochmal kritisch auf Performance und Code Qualität an. \ldots{} Multi threading ist keine
-gute idee.} (Look at the project critically again for performance and code quality. \ldots{} Multithreading is not
-a good idea.) & Review with 15 findings; after ``\emph{Alles umsetzen}'' (implement everything): array storage,
-query stamps, value-type views, golden tests. PR. \\
-\emph{Macht es sinn yen/lawler zu integrieren und wofür?} (Does it make sense to integrate Yen/Lawler, and what for?)
-\ldots{} \emph{Bitte implantieren und in doku genau erklären} (Please ``implant'' it and explain it precisely in the
-docs) & Explained loops in two-way networks; implemented Yen--Lawler with A* and documentation. PR. \\
-Expert feedback pasted by the author (MTX/DIMACS formats, Mt-KaHyPar as partitioner, CH/CCH, ``\emph{wenn man
-CH/Arcflags und Eppstein kombiniert könnte man daraus nen paper machen}'' -- combining CH/arc flags and Eppstein could
-make a paper), with ``\emph{Bitte bewerten und sortieren nach schweregrad und sinnhaftigkeit}'' (please assess and
-sort by severity and usefulness) & Ranked assessment; METIS export and partition import (tested with Mt-KaHyPar);
-literature review on CH with measurements, which recommended \emph{against} CH at that point. \\
-\emph{Bitte contradiction hierachies implementieren} (Please implement \emph{contradiction} hierarchies) &
-Understood as contraction hierarchies; CH with PHAST in \cs{} and Go, 3--10$\times$ faster trees, honest note on
-break-even. PR. \\
-\emph{Portiere das Projekt auf rust und ergänze die zeitmessung. Ziel ist es nun ein paper aus allem zu erstellen
-\ldots{}} (Port the project to Rust and add the timing. The goal is now to write a paper from everything \ldots) &
-Rust port, identical benchmark in three languages, this paper. \\
-\bottomrule
-\end{tabularx}
-\end{table}
+The whole project is an experiment with Claude~\cite{claudecode}. The author worked with it as a coding agent in a
+cloud development environment with access to the repository. Claude read and wrote the code, ran builds, tests,
+benchmarks and a fuzzer, searched the literature, opened pull requests and reacted to CI results; the author decided
+what to do next, chose among the options it proposed, and merged. All work happened in \NumSessions{} sessions over
+two days (\NumDays); \NumPullRequests{} pull requests were merged before this paper. The author's requests were
+short and informal, usually one sentence, and never a specification.
 
 \subsection{What the human contributed}
-Three kinds of input shaped the result, and none of them was a specification. \emph{The old algorithm} fixed the
-interface (labels, groups, \texttt{FindShortestPath}/\texttt{FindNextShortestPath}) and the domain; much of the
-later work kept that interface or broke it only when asked. \emph{Short, sometimes playful prompts} (``game
-changer'', ``next level'', ``top notch standard'') delegated the search for improvements to the agent but kept the
-decisions with the author, who chose among proposed items by number. \emph{Expert ideas} (arc flags with a real
-partitioner, CH, the paper idea) came from a colleague's review and redirected the work towards algorithm
-engineering. Constraints such as ``no multithreading'' and ``you may break the interface'' were the most effective
-prompts per word.
+Three kinds of input shaped the result. \emph{The old algorithm} fixed the interface (labels, groups,
+\texttt{FindShortestPath}/\texttt{FindNextShortestPath}) and the domain; much of the later work kept that interface
+or broke it only when the author allowed it. \emph{Open questions} (what would improve the project most, how to make
+it much faster, what is missing for a high-quality library) delegated the search for improvements to Claude, while
+the author kept the decisions by choosing among the proposed items. \emph{Expert ideas} (arc flags with a real
+partitioner, contraction hierarchies, the idea for a paper) came from a colleague's review and redirected the work
+towards algorithm engineering. Explicit constraints, such as excluding multithreading or allowing breaking interface
+changes, were the most effective requests.
 
-\subsection{What the agent did, and where it failed}
-The agent wrote all code, tests, documentation and benchmarks of version~2, ran every measurement in this paper, and
+\subsection{What Claude did, and where it failed}
+Claude wrote all code, tests, documentation and benchmarks of version~2, ran every measurement in this paper, and
 proposed most of the ideas that were implemented. It also argued \emph{against} ideas when its measurements did not
 support them: it first advised against contraction hierarchies, because the measured bottleneck of long queries was
 the number of spur searches, and after being asked to implement them it reported that the gain on grids
@@ -361,7 +319,7 @@ were caught by tests, not by review:
         small two-way graph, and the edges of Eppstein's example typed from memory in the Rust tests); in each case
         brute force or the shared golden data showed that the library was right and the expectation wrong.
   \item Fuzzing found that the Go DIMACS importer treated some Unicode white space differently from line splitting,
-        and that the agent's own test harness had an $O(n^2)$ sort.
+        and that Claude's own test harness had an $O(n^2)$ sort.
   \item A scripted text edit broke a Go struct tag; the build caught it.
   \item The first Rust port stored labels twice; the cross-language memory comparison exposed it.
   \item The environment could not download the DIMACS road networks (HTTP-only server behind an HTTPS-only proxy),
@@ -369,9 +327,9 @@ were caught by tests, not by review:
 \end{itemize}
 
 \subsection{Observations}
-The decisive factor for reliability was the test infrastructure that the agent built early: golden data shared by all
+The decisive factor for reliability was the test infrastructure that Claude built early: golden data shared by all
 implementations, brute-force oracles and fuzzing. It made large refactorings (object graph to arrays; three
-languages) cheap to verify and let the author accept changes without reading every line. The agent was most useful as
+languages) cheap to verify and let the author accept changes without reading every line. Claude was most useful as
 an algorithm engineer when asked open questions and given freedom, and most precise when given constraints. It never
 needed a formal specification; it needed a way to check itself.
 
@@ -380,7 +338,8 @@ All experiments use synthetic grids, which are a hard case for contraction hiera
 real road networks (DIMACS~\cite{dimacs9}, OpenStreetMap) are the obvious next step. The machine is a shared cloud VM;
 we report medians of fresh processes, but differences below about 10--20\% should be read as noise. The memory
 numbers are measured differently in each language (\cref{sec:experiments}). The case study has a sample size of one
-author and one agent, and the author wrote this paper with the agent.
+author and one AI model, and this paper itself was generated with Claude, so its account of the process is not
+independent.
 
 \section{Conclusion}
 A small 2010 prototype became a library that combines Eppstein's enumeration, a detour corridor, Yen--Lawler with

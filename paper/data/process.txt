@@ -1,4 +1,3 @@
-NumPrompts=41
 NumSessions=two
 NumDays=8--9 November 2026
 NumPullRequests=11
