@@ -39,6 +39,26 @@ namespace Eppstein
         /// Region of vertex for arc-flags optimization, -1 if not assigned
         /// </summary>
         public int Region = -1;
+        /// <summary>
+        /// Outgoing edges (subset of RelatedEdges), built by the graph before a query
+        /// </summary>
+        internal Edge[] OutEdges = NoEdges;
+        /// <summary>
+        /// Incoming edges (subset of RelatedEdges), built by the graph before a query
+        /// </summary>
+        internal Edge[] InEdges = NoEdges;
+        /// <summary>
+        /// Shared empty edge array
+        /// </summary>
+        internal static readonly Edge[] NoEdges = new Edge[0];
+        /// <summary>
+        /// Heap of sidetracks on the shortest path tree path from this vertex to t, built on demand
+        /// </summary>
+        internal SidetrackHeapNode SidetrackHeap = null;
+        /// <summary>
+        /// True if SidetrackHeap has been built for the current shortest path tree
+        /// </summary>
+        internal bool SidetrackHeapBuilt = false;
         #endregion
 
         #region Properties

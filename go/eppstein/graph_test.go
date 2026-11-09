@@ -2,6 +2,7 @@ package eppstein
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 	"strings"
@@ -80,6 +81,23 @@ func bruteForceWalkWeights(edges []testEdge, s, t int, maxWeight int64) []int64 
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
 	return result
+}
+
+// reachable tells if t can be reached from s.
+func reachable(edges []testEdge, s, t int) bool {
+	seen := map[int]bool{s: true}
+	queue := []int{s}
+	for len(queue) > 0 {
+		v := queue[0]
+		queue = queue[1:]
+		for _, e := range edges {
+			if e.from == v && !seen[e.to] {
+				seen[e.to] = true
+				queue = append(queue, e.to)
+			}
+		}
+	}
+	return seen[t]
 }
 
 func assertValidPath(t *testing.T, p Path, s, target string) {
@@ -350,6 +368,143 @@ func TestSidetrackChainRebuildsFullList(t *testing.T) {
 	}
 	if len(root.sidetracks()) != 0 {
 		t.Fatal("root has sidetracks")
+	}
+}
+
+func TestMaxDetourReturnsExactlyThePathsWithinTheCorridor(t *testing.T) {
+	for _, ratio := range []bool{false, true} {
+		rnd := rand.New(rand.NewSource(11))
+		checked := 0
+		for it := 0; it < 200; it++ {
+			n := 2 + rnd.Intn(6)
+			labels := make([]string, n)
+			for i := range labels {
+				labels[i] = fmt.Sprintf("V%d", i)
+			}
+			var edges []testEdge
+			for i := 0; i < n; i++ {
+				for j := 0; j < n; j++ {
+					if rnd.Float64() < 0.3 {
+						edges = append(edges, testEdge{i, j, int64(1 + rnd.Intn(9))})
+					}
+				}
+			}
+			g := NewGraph()
+			g.CreateVertices(strings.Join(labels, ","))
+			for _, e := range edges {
+				g.CreateEdges(labels[e.from], labels[e.to], e.weight, "g")
+			}
+			if rnd.Intn(2) == 0 {
+				g.EnableArcFlags(1 + rnd.Intn(3))
+			}
+
+			s, target := rnd.Intn(n), rnd.Intn(n)
+			if s == target {
+				continue
+			}
+			if !reachable(edges, s, target) {
+				if g.FindShortestPath(labels[s], labels[target]).IsValid() {
+					t.Fatal("path found where none exists")
+				}
+				continue
+			}
+			const bruteForceLimit = 45
+			all := bruteForceWalkWeights(edges, s, target, bruteForceLimit)
+			if len(all) == 0 {
+				continue // shortest path longer than the brute force limit
+			}
+
+			shortest := all[0]
+			var limit int64
+			if ratio {
+				g.SetMaxDetourRatio(float64(rnd.Intn(6)) / 10)
+				limit = shortest + int64(math.Floor(g.MaxDetourRatio()*float64(shortest)))
+			} else {
+				g.SetMaxDetour(int64(rnd.Intn(15)))
+				limit = shortest + g.MaxDetour()
+			}
+			if limit > bruteForceLimit {
+				continue // brute force would miss paths
+			}
+			var expected []int64
+			for _, w := range all {
+				if w <= limit {
+					expected = append(expected, w)
+				}
+			}
+			paths := take(g, labels[s], labels[target], len(expected)+5) // then an empty path
+			for _, p := range paths {
+				assertValidPath(t, p, labels[s], labels[target])
+			}
+			if !equalInts(weights(paths), expected) {
+				t.Fatalf("ratio=%v it=%d: weights %v, want %v", ratio, it, weights(paths), expected)
+			}
+			checked++
+		}
+		t.Logf("ratio=%v: %d graphs checked", ratio, checked)
+		if checked < 50 {
+			t.Fatalf("only %d graphs checked", checked)
+		}
+	}
+}
+
+func TestMaxDetourValidatesValuesAndRequiresNewQuery(t *testing.T) {
+	g := eppsteinExample()
+	if g.MaxDetour() != math.MaxInt64 || !math.IsInf(g.MaxDetourRatio(), 1) {
+		t.Fatal("limits set by default")
+	}
+	if g.SetMaxDetour(-1) || g.SetMaxDetourRatio(-0.1) || g.SetMaxDetourRatio(math.NaN()) {
+		t.Fatal("invalid limit accepted")
+	}
+	if w := g.FindShortestPath("S", "T").Weight(); w != 55 {
+		t.Fatalf("shortest = %d", w)
+	}
+	g.SetMaxDetour(4) // paths 55, 58, 59
+	if g.FindNextShortestPath().IsValid() {
+		t.Fatal("changing the limit must require a new query")
+	}
+	check := func(want []int64) {
+		t.Helper()
+		if got := weights(take(g, "S", "T", 10)); !equalInts(got, want) {
+			t.Fatalf("weights = %v, want %v", got, want)
+		}
+	}
+	check([]int64{55, 58, 59})
+	g.SetMaxDetour(math.MaxInt64)
+	g.SetMaxDetourRatio(0.1) // floor(5.5) = 5: paths up to 60
+	check([]int64{55, 58, 59})
+	g.SetMaxDetour(3) // the smaller limit applies
+	check([]int64{55, 58})
+}
+
+func TestMaxDetourStopsShortestPathTreeAtTheCorridor(t *testing.T) {
+	// Long chain behind the start: S <- X1 <- X2 <- X3 is far away from T
+	g := NewGraph()
+	g.CreateVertices("S,T,X1,X2,X3")
+	g.CreateEdges("S,X1,X2,X3", "T,S,X1,X2", 10, "g")
+	g.SetMaxDetour(5)
+	if p := g.FindShortestPath("S", "T"); p.VertexNames() != "S,T" {
+		t.Fatalf("path = %s", p.VertexNames())
+	}
+	dot := g.Serialize()
+	if !strings.Contains(dot, `"S" [label="S\n10"`) || !strings.Contains(dot, `"X1" [label="X1"]`) {
+		t.Fatalf("distances beyond the corridor computed:\n%s", dot)
+	}
+}
+
+func TestPathEnumerationCreatesAtMostThreeCandidatesPerPath(t *testing.T) {
+	g := gridGraph(30)
+	paths := take(g, "V0X0", "V29X29", 2000)
+	if len(paths) != 2000 {
+		t.Fatalf("paths = %d", len(paths))
+	}
+	if g.candidatesCreated > int64(3*len(paths)+1) {
+		t.Fatalf("candidates = %d", g.candidatesCreated)
+	}
+	for i := 1; i < len(paths); i++ {
+		if paths[i-1].Weight() > paths[i].Weight() {
+			t.Fatalf("paths out of order at %d", i)
+		}
 	}
 }
 

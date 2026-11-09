@@ -278,6 +278,7 @@ namespace Eppstein
         /// </remarks>
         private void ComputeArcFlags()
         {
+            EnsureAdjacency();  // Backward Dijkstra uses incoming edge arrays
             List<Edge> arcs = new List<Edge>();
             HashSet<Vertex> boundary = new HashSet<Vertex>();
             foreach (Vertex _v in Vertices)
@@ -320,30 +321,31 @@ namespace Eppstein
         private Dictionary<Vertex, long> BackwardDistances(Vertex _target)
         {
             Dictionary<Vertex, long> dist = new Dictionary<Vertex, long>();
-            PriorityQueue<SP_Node> fringe = new PriorityQueue<SP_Node>(this.Vertices.Count);
+            PriorityQueue<Edge, long> fringe = new PriorityQueue<Edge, long>();
             dist[_target] = 0;
             Vertex v = _target;
 
-            do
+            while (true)
             {
                 if (v != null)
                 {
                     long dv = dist[v];
-                    foreach (Edge _e in v.RelatedEdges)
-                        if (_e.Head == v && _e.Weight >= 0 && !dist.ContainsKey(_e.Tail))
-                            fringe.Enqueue(new SP_Node(_e, _e.Weight + dv));
+                    foreach (Edge _e in v.InEdges)
+                        if (_e.Weight >= 0 && !dist.ContainsKey(_e.Tail))
+                            fringe.Enqueue(_e, _e.Weight + dv);
                 }
 
-                SP_Node node = fringe.Dequeue();
-                if (node == null)
+                Edge e;
+                long distance;
+                if (!fringe.TryDequeue(out e, out distance))
                     break;
 
-                v = node.Edge.Tail;
+                v = e.Tail;
                 if (!dist.ContainsKey(v))
-                    dist[v] = node.Weight;
+                    dist[v] = distance;
                 else
                     v = null;
-            } while (true);
+            }
 
             return dist;
         }

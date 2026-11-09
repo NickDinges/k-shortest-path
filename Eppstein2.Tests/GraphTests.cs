@@ -64,6 +64,22 @@ namespace Eppstein2.Tests
             return weights;
         }
 
+        /// <summary>Tells if t can be reached from s</summary>
+        private static bool Reachable(List<Tuple<int, int, int>> edges, int s, int t)
+        {
+            HashSet<int> seen = new HashSet<int> { s };
+            Queue<int> queue = new Queue<int>();
+            queue.Enqueue(s);
+            while (queue.Count > 0)
+            {
+                int v = queue.Dequeue();
+                foreach (Tuple<int, int, int> e in edges)
+                    if (e.Item1 == v && seen.Add(e.Item2))
+                        queue.Enqueue(e.Item2);
+            }
+            return seen.Contains(t);
+        }
+
         private static void AssertValidPath(Path p, string s, string t)
         {
             Assert.True(p[0].Tail.Equals(s));
@@ -242,6 +258,127 @@ namespace Eppstein2.Tests
             Assert.Equal(3 * first.Delta, child.Weight);
             Assert.Same(first.Head, child.LastHead);
             Assert.Null(new ST_Node(new Path()).LastHead);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void MaxDetour_ReturnsExactlyThePathsWithinTheCorridor(bool ratio)
+        {
+            Random rnd = new Random(11);
+            int checkedGraphs = 0;
+            for (int it = 0; it < 200; it++)
+            {
+                int n = rnd.Next(2, 8);
+                string[] labels = Enumerable.Range(0, n).Select(i => "V" + i).ToArray();
+                List<Tuple<int, int, int>> edges = new List<Tuple<int, int, int>>();
+                for (int i = 0; i < n; i++)
+                    for (int j = 0; j < n; j++)
+                        if (rnd.NextDouble() < 0.3)
+                            edges.Add(Tuple.Create(i, j, rnd.Next(1, 10)));
+
+                Graph g = new Graph();
+                g.CreateVertices(string.Join(",", labels));
+                foreach (Tuple<int, int, int> e in edges)
+                    g.CreateEdges(labels[e.Item1], labels[e.Item2], e.Item3, "g");
+                if (rnd.Next(2) == 0)
+                    g.EnableArcFlags(rnd.Next(1, 4));
+
+                int s = rnd.Next(n), t = rnd.Next(n);
+                if (s == t)
+                    continue;
+                if (!Reachable(edges, s, t))
+                {
+                    Assert.False(g.FindShortestPath(labels[s], labels[t]).IsValid);
+                    continue;
+                }
+                const int bruteForceLimit = 45;
+                List<int> all = BruteForceWalkWeights(n, edges, s, t, bruteForceLimit);
+                if (all.Count == 0)
+                    continue;  // Shortest path longer than the brute force limit
+
+                long shortest = all[0];
+                long limit;
+                if (ratio)
+                {
+                    g.MaxDetourRatio = rnd.Next(0, 6) / 10.0;
+                    limit = shortest + (long)Math.Floor(g.MaxDetourRatio * shortest);
+                }
+                else
+                {
+                    g.MaxDetour = rnd.Next(0, 15);
+                    limit = shortest + g.MaxDetour;
+                }
+                if (limit > bruteForceLimit)
+                    continue;  // Brute force would miss paths
+
+                List<long> expected = all.Where(w => w <= limit).Select(w => (long)w).ToList();
+                List<Path> paths = Take(g, labels[s], labels[t], expected.Count + 5);
+                Assert.Equal(expected, paths.Select(p => p.Weight));  // Then an empty path
+                foreach (Path p in paths)
+                    AssertValidPath(p, labels[s], labels[t]);
+                checkedGraphs++;
+            }
+            Assert.True(checkedGraphs >= 50, "only " + checkedGraphs + " graphs checked");
+        }
+
+        [Fact]
+        public void MaxDetour_ValidatesValues_AndRequiresNewQuery()
+        {
+            Graph g = EppsteinExample();
+            Assert.Equal(long.MaxValue, g.MaxDetour);
+            Assert.True(double.IsPositiveInfinity(g.MaxDetourRatio));
+            Assert.Throws<ArgumentOutOfRangeException>(() => g.MaxDetour = -1);
+            Assert.Throws<ArgumentOutOfRangeException>(() => g.MaxDetourRatio = -0.1);
+            Assert.Throws<ArgumentOutOfRangeException>(() => g.MaxDetourRatio = double.NaN);
+
+            Assert.Equal(55, g.FindShortestPath("S", "T").Weight);
+            g.MaxDetour = 4;  // Paths 55, 58, 59
+            Assert.False(g.FindNextShortestPath().IsValid);  // Changing the limit requires a new query
+            Assert.Equal(new long[] { 55, 58, 59 }, Take(g, "S", "T", 10).Select(p => p.Weight));
+
+            g.MaxDetour = long.MaxValue;
+            g.MaxDetourRatio = 0.1;  // floor(5.5) = 5: paths up to 60
+            Assert.Equal(new long[] { 55, 58, 59 }, Take(g, "S", "T", 10).Select(p => p.Weight));
+            g.MaxDetour = 3;  // The smaller limit applies
+            Assert.Equal(new long[] { 55, 58 }, Take(g, "S", "T", 10).Select(p => p.Weight));
+        }
+
+        [Fact]
+        public void MaxDetour_StopsShortestPathTreeAtTheCorridor()
+        {
+            // Long chain behind the start: S <- X1 <- X2 <- ... is far away from T
+            Graph g = new Graph();
+            g.CreateVertices("S,T,X1,X2,X3");
+            g.CreateEdges("S,X1,X2,X3", "T,S,X1,X2", 10, "g");
+            g.MaxDetour = 5;
+            Assert.Equal("S,T", g.FindShortestPath("S", "T").VertexNames);
+            string dot = g.Serialize();
+            Assert.Contains("\"S\" [label=\"S\\n10\"", dot);    // Distance computed
+            Assert.Contains("\"X1\" [label=\"X1\"]", dot);         // Beyond the corridor: not computed
+        }
+
+        [Fact]
+        public void PathEnumeration_CreatesAtMostThreeCandidatesPerPath()
+        {
+            Graph g = new Graph();
+            int size = 30;
+            Random rnd = new Random(3);
+            List<string> names = new List<string>();
+            for (int i = 0; i < size * size; i++)
+                names.Add("V" + i);
+            g.CreateVertices(string.Join(",", names));
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    if (x + 1 < size) g.CreateEdges(names[y * size + x], names[y * size + x + 1], rnd.Next(1, 100), "g");
+                    if (y + 1 < size) g.CreateEdges(names[y * size + x], names[(y + 1) * size + x], rnd.Next(1, 100), "g");
+                }
+            List<Path> paths = Take(g, names[0], names[size * size - 1], 2000);
+            Assert.Equal(2000, paths.Count);
+            Assert.True(g.CandidatesCreated <= 3 * paths.Count + 1, "candidates: " + g.CandidatesCreated);
+            for (int i = 1; i < paths.Count; i++)
+                Assert.True(paths[i - 1].Weight <= paths[i].Weight);
         }
 
         [Fact]
