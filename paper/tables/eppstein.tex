@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{Eppstein, corner to corner on one-way grids (median times in ms). Tree: repeated query; next: the remaining $k-1$ paths. Fastest per group in bold (within 3\%).}
+\label{tab:eppstein}
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+ & \multicolumn{3}{c}{tree} & \multicolumn{3}{c}{next paths} \\ \cmidrule(lr){2-4}\cmidrule(lr){5-7}
+ & \cs{} & Go & Rust & \cs{} & Go & Rust \\
+\midrule
+$200^2$, $k=10^4$ & 29.2 & 8.6 & \textbf{7.3} & 79.6 & 45.5 & \textbf{35.3} \\
+$500^2$, $k=10^4$ & 54.0 & 73.4 & \textbf{52.4} & \num{205} & \num{113} & \textbf{88.6} \\
+$1000^2$, $k=10^4$ & \textbf{\num{255}} & \num{312} & \textbf{\num{260}} & \num{406} & \num{359} & \textbf{\num{314}} \\
+$1000^2$, $k=10^5$ & \textbf{\num{253}} & \num{331} & \num{272} & \num{3419} & \num{3436} & \textbf{\num{3079}} \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -196,6 +196,7 @@ Building the 1,000,000-vertex grid (2,097,000 edges): 1.1 s with `CreateVertices
 
 ```sh
 go test -run none -bench . -benchmem ./eppstein
+go run ./cmd/benchmark 200 1000 --k 10000 --build index   # same program as the C# and Rust benchmarks
 ```
 
 ## Project layout
@@ -214,6 +215,7 @@ go test -run none -bench . -benchmem ./eppstein
 | `eppstein/simplepaths.go` | Simple paths: Yen's algorithm with Lawler's improvement and A* |
 | `eppstein/*_test.go` | Tests, benchmarks and runnable examples; `golden_test.go` checks the shared data in `../testdata/golden` |
 | `cmd/eppstein/main.go` | Demo program (`go run ./cmd/eppstein [k] [--dot file]`) |
+| `cmd/benchmark/main.go` | Benchmark, identical to the C# and Rust programs (see `../paper`) |
 
 ## Moving this module into its own repository
 

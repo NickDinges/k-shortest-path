@@ -1,0 +1,19 @@
+\begin{table}[t]
+\centering
+\caption{Runtime settings (median ms). Turning garbage collection off (Go) or making it rare (\cs{}) has no measurable effect; disabling tiered compilation makes short \cs{} runs 2--4$\times$ faster.}
+\label{tab:runtime}
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+ & \multicolumn{2}{c}{Eppstein $200^2$, $k=10^4$} & \multicolumn{2}{c}{Eppstein $1000^2$, $k=10^5$} & \multicolumn{2}{c}{Yen $200^2$, $k=10^3$} \\ \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+ & tree & next & tree & next & tree & next \\
+\midrule
+\cs{} default & 27.7 & 76.2 & \num{255} & \num{3441} & 38.1 & \num{5485} \\
+\cs{} gen0 budget 256\,MB & 28.5 & 78.9 & \num{257} & \num{3489} & 38.4 & \num{5428} \\
+\cs{} without tiered JIT & 6.4 & 42.9 & \num{248} & \num{3332} & 8.6 & \num{5331} \\
+Go default & 9.0 & 43.9 & \num{324} & \num{3468} & 10.9 & \num{7581} \\
+Go \texttt{GOGC=off} & 8.0 & 42.7 & \num{318} & \num{3451} & 12.4 & \num{7646} \\
+Rust & 6.6 & 34.8 & \num{259} & \num{3092} & 9.4 & \num{5869} \\
+\bottomrule
+\end{tabular}
+\end{table}

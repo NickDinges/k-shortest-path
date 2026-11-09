@@ -76,6 +76,25 @@ jobs:
       - name: Test demo program
         run: go test -race ./cmd/...
 
+  rust:
+    name: Rust fmt, clippy and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
+      - name: Formatting
+        run: cargo fmt --check
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --release
+      - name: Benchmark program runs and agrees with the golden weight
+        run: cargo run --release --bin benchmark -- 50 --k 100 --build index
+
   fuzz:
     name: Go fuzzing
     runs-on: ubuntu-latest

@@ -5,3 +5,14 @@ obj/
 TestResults/
 *.test
 *.prof
+go/benchmark.bin
+rust/target/
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.bbl
+paper/*.blg
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.toc
+__pycache__/

@@ -1,0 +1,5 @@
+Each simple path costs many A* spur searches, so the times are much higher than for walks: 0.7--0.9\,s for 100 paths
+and 5.5--7.6\,s for 1000 paths on the $4\cdot 10^4$-vertex grid. Rust is fastest for $k=100$; for $k=1000$, \cs{} is
+5\% faster than Rust, which is within noise. One likely reason is that .NET's built-in \texttt{PriorityQueue} is a
+4-ary heap, while the Go and Rust ports use binary heaps. Go is slowest here: its trie and duplicate check use maps
+keyed by strings. With a corridor on the $10^6$-vertex graph, 100 simple paths take 35--96\,ms.

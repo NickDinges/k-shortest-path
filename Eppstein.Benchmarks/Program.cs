@@ -15,6 +15,9 @@ using Eppstein;
 /// in both directions) instead of corner to corner.
 /// Each grid vertex has edges to its right and lower neighbor (random weight 1..100)
 /// and every 10th vertex an edge back to its left neighbor, so the graph has cycles.
+/// The weights come from SplitMix64 (seed 1), implemented identically in the Go
+/// (go/cmd/benchmark) and Rust (rust/src/bin/benchmark.rs) benchmarks: all three build the same
+/// graphs, print the same table, and must report the same weight of the last path.
 /// </summary>
 class Benchmark
 {
@@ -62,16 +65,16 @@ class Benchmark
     static void Run(int size, int k, bool local, double ratio, string build, bool twoWay, bool simple, bool ch)
     {
         // Edge list (vertex index = y * size + x), prepared before timing
-        Random rnd = new Random(1);
+        SplitMix rnd = new SplitMix(1);
         var edgeList = new System.Collections.Generic.List<(int Tail, int Head, int Weight)>();
         for (int y = 0; y < size; y++)
         {
             for (int x = 0; x < size; x++)
             {
                 int v = y * size + x;
-                if (x + 1 < size) edgeList.Add((v, v + 1, rnd.Next(1, 101)));
-                if (y + 1 < size) edgeList.Add((v, v + size, rnd.Next(1, 101)));
-                if (x > 0 && v % 10 == 0) edgeList.Add((v, v - 1, rnd.Next(1, 101)));
+                if (x + 1 < size) edgeList.Add((v, v + 1, rnd.Weight()));
+                if (y + 1 < size) edgeList.Add((v, v + size, rnd.Weight()));
+                if (x > 0 && v % 10 == 0) edgeList.Add((v, v - 1, rnd.Weight()));
             }
         }
         if (twoWay)  // Every street in both directions (the back edges of the one-way grid are dropped)
@@ -156,7 +159,26 @@ class Benchmark
         }
         double next = watch.Elapsed.TotalMilliseconds;
 
-        Console.WriteLine("| " + size + "x" + size + " | " + size * size + " | " + edges + " | " + buildTime.ToString("F0") + " ms | " + memory.ToString("F0") + " MB | " +
-            first.ToString("F0") + " ms | " + repeated.ToString("F0") + " ms | " + next.ToString("F0") + " ms | " + found + " | " + last.Weight + " |");
+        Console.WriteLine("| " + size + "x" + size + " | " + size * size + " | " + edges + " | " + buildTime.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " ms | " + memory.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " MB | " +
+            first.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " ms | " + repeated.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " ms | " + next.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " ms | " + found + " | " + last.Weight + " |");
     }
+}
+
+/// <summary>SplitMix64: tiny deterministic generator, identical in C#, Go and Rust.</summary>
+sealed class SplitMix
+{
+    private ulong state;
+
+    public SplitMix(ulong seed) => state = seed;
+
+    public ulong Next()
+    {
+        state += 0x9E3779B97F4A7C15UL;
+        ulong z = state;
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+        return z ^ (z >> 31);
+    }
+
+    public int Weight() => 1 + (int)(Next() % 100);
 }

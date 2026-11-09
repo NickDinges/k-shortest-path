@@ -1,0 +1,4 @@
+On acyclic grids, where it terminates at all, the original implementation's first query enumerates every path:
+156\,ms for $10\times10$ (48,620 paths), 1.8\,s for $11\times11$ and 40\,s and 132\,MB for $12\times12$ (705,432
+paths). The current version needs 0.1\,ms for the first path and less than 3\,ms for the next 999, independent of
+the number of paths in the graph. On graphs with cycles, the original does not terminate.

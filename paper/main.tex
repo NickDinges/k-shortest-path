@@ -1,0 +1,397 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{siunitx}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17}
+\usetikzlibrary{positioning}
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\usepackage{listings}
+\usepackage{xspace}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=green!40!black,urlcolor=blue!60!black]{hyperref}
+\usepackage[nameinlink]{cleveref}
+
+\sisetup{group-separator={,},group-minimum-digits=4}
+\lstset{basicstyle=\ttfamily\small,columns=fullflexible,breaklines=true,frame=single,framerule=0.3pt}
+\newcommand{\cs}{C\#}
+\newcommand{\eg}{e.\,g.\@\xspace}
+\newcommand{\ie}{i.\,e.\@\xspace}
+
+\input{tables/numbers}
+
+\title{From a 2010 Prototype to Contraction Hierarchies in Three Languages:\\
+Engineering $k$ Shortest Paths with Eppstein, Yen--Lawler, Arc Flags and PHAST\\
+\large An experiment in AI-assisted algorithm engineering}
+\author{Nick Dinges\thanks{Implementation, tests, measurements and a first draft of this text were produced by an AI
+coding agent (Claude Code~\cite{claudecode}) under the author's direction; see \cref{sec:ai}.}}
+\date{November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We report on turning a small \cs{} implementation of Eppstein's $k$ shortest paths algorithm, written in 2010, into a
+library that combines several modern techniques: Eppstein's enumeration with lazily built persistent sidetrack
+heaps, a detour corridor that bounds both the shortest-path tree and the enumeration, Yen's algorithm with Lawler's
+improvement and A* spur searches for loopless paths, arc flags with external graph partitions, and a contraction
+hierarchy whose PHAST sweep computes the full shortest-path tree. The library exists in three languages with the same
+interface and results: \cs{} and Go, which are garbage collected, and Rust, which is not. All three share golden test
+data and an identical benchmark, so their timings can be compared on exactly the same graphs.
+On grid graphs with up to one million vertices, all three implementations are within a factor of
+\NumMaxRatioRepeated{} of each other for the shortest-path tree. Rust is the fastest in most scenarios, by 10--40\%.
+The largest gaps (up to 4$\times$ on small inputs) come from .NET's tiered JIT compilation, not from garbage
+collection: disabling Go's collector or making .NET's rare has no measurable effect, because all three use the
+same flat, allocation-free data layout. The algorithmic choices dominate by far: the original 2010
+implementation needs \NumVOneFirst{} for the first path on a $\NumVOneSize\times\NumVOneSize$ acyclic grid where the
+current one needs \NumVTwoFirst, and a corridor turns a \NumLocalRepeated{} query into \NumLocalRatioRepeated.
+Finally, we describe the development process: the whole transformation took about two days of calendar time and about
+\NumPrompts{} short, often informal prompts to an AI coding agent, plus the author's old code and
+ideas from a domain expert. We report what worked, what the agent got wrong, and how tests caught it.
+\end{abstract}
+
+\section{Introduction}
+
+The $k$ shortest paths problem asks for the $k$ shortest paths between two vertices $s$ and $t$ of a weighted
+directed graph, in order of weight. It appears in route planning (alternatives to the best route), network routing,
+and as a building block of optimization and language-processing pipelines. There are two main variants: paths may
+repeat vertices (\emph{walks}), or they must be \emph{simple} (loopless). For the first variant,
+Eppstein~\cite{eppstein1998} gave an algorithm that, after one shortest-path tree computation, produces each further
+path in $O(\log k)$ time (implicitly) and is still the reference today. For simple paths, Yen's
+algorithm~\cite{yen1971} with Lawler's improvement~\cite{lawler1972} is the classic choice; sidetrack-based algorithms
+are a recent improvement~\cite{kurz2016,alzoobi2023}.
+
+This paper is an engineering report. Its starting point is a 486-line \cs{} implementation of Eppstein's idea
+written by the author in 2010. It computed correct paths on the example of Eppstein's paper, but it enumerated all
+paths eagerly in the first query, its priority queue was a sorted list, and it did not terminate on graphs with
+cycles. In November 2026 the author used an AI coding agent to turn it into a modern library. The project grew in
+small steps, each one triggered by a short prompt: fix the recursion, port to Linux, add Graphviz output, port to Go,
+make it fast, add simple paths, add arc flags with real partitions, add contraction hierarchies, port to Rust, and
+finally: write this paper.
+
+\paragraph{Contributions.}
+\begin{itemize}
+  \item A combination of techniques for $k$ shortest paths in one library (\cref{sec:algorithms}): lazy Eppstein
+        enumeration with persistent leftist heaps, a detour corridor that bounds the tree \emph{and} the
+        enumeration, Yen--Lawler with A* spur searches guided by the exact distances of the shortest-path tree, arc
+        flags with partitions from external partitioners, and a contraction hierarchy with PHAST for the tree. All
+        techniques keep the results exact; every combination is tested against brute force.
+  \item Three implementations with identical interfaces and results in \cs, Go and Rust, sharing golden test data,
+        and an identical benchmark (same pseudo-random graphs, same output), which allows a controlled comparison
+        of garbage-collected and non-garbage-collected languages on the same algorithms and data layout
+        (\cref{sec:languages,sec:experiments}).
+  \item A case study of AI-assisted algorithm engineering (\cref{sec:ai}): which inputs came from the human (an old
+        algorithm, informal prompts, expert ideas), what the agent did, and where it failed.
+\end{itemize}
+
+\section{Background and related work}\label{sec:related}
+
+\paragraph{Eppstein's algorithm.}
+Let $d(v)$ be the distance from $v$ to $t$, computed by one run of Dijkstra's algorithm~\cite{dijkstra1959} on the
+reversed graph; the best outgoing edges form the shortest-path tree $T$. Every edge $e=(u,v)\notin T$ is a
+\emph{sidetrack} with non-negative \emph{delta} $\delta(e)=w(e)+d(v)-d(u)$, the extra cost of taking $e$ instead of
+following $T$. Every $s$--$t$ walk is uniquely described by its sequence of sidetracks, and its weight is
+$d(s)+\sum\delta$. Eppstein organizes the sidetracks reachable from each vertex in heaps $H(v)$ that share structure
+along tree paths (persistence~\cite{driscoll1989}), and explores the resulting \emph{path graph} best-first. Each
+extracted path creates at most three new candidates. Jiménez and Marzal~\cite{jimenez1999} showed that a lazy
+variant, which builds heaps only where needed, is faster in practice.
+
+\paragraph{Simple paths.}
+Yen's algorithm~\cite{yen1971} derives each new simple path from a previous one by fixing a prefix (the \emph{root})
+and computing the best \emph{spur} from the root's last vertex, avoiding the root's vertices and the edges already
+used by earlier paths with the same root. Lawler~\cite{lawler1972} observed that only spurs from the deviation vertex
+onward are needed. Kurz and Mutzel~\cite{kurz2016} and Al Zoobi et al.~\cite{alzoobi2023} combine Eppstein's
+sidetrack idea with simplicity checks and avoid many spur searches.
+
+\paragraph{Speed-up techniques for shortest paths.}
+Route planning has a rich toolbox~\cite{bast2016}. \emph{Arc flags}~\cite{lauther2004,moehring2006} partition the
+graph into regions and mark, for every edge and region, whether the edge lies on some shortest path into that region.
+\emph{Contraction hierarchies} (CH)~\cite{geisberger2008} order the vertices by importance and add shortcuts, so
+that every shortest path has an equivalent up--down path. \emph{PHAST}~\cite{delling2013phast} computes a full
+shortest-path tree on a CH with one upward search and a linear sweep; RPHAST~\cite{delling2011rphast} restricts it
+to a target set. \emph{Customizable CH}~\cite{dibbelt2016} separate a metric-independent preprocessing from fast
+re-customization of weights. Alternative routes~\cite{abraham2013} and $k$ shortest paths with limited
+overlap~\cite{chondrogiannis2020} address a related problem, where paths must be sufficiently different. We found
+no work that combines Eppstein's enumeration with CH/PHAST; since Eppstein needs the distances of all vertices, a
+point-to-point CH query is not enough, but PHAST is (\cref{sec:ch}).
+
+\paragraph{Garbage collection.}
+Hertz and Berger~\cite{hertz2005} quantified that garbage collection can match explicit memory management in speed
+if it is given several times more memory. Our setting is different: all three implementations avoid allocation in
+their hot loops, so the comparison is mostly one of compilers, runtime checks and data layout
+(\cref{sec:discussion}).
+
+\section{Algorithms and their combination}\label{sec:algorithms}
+
+\Cref{fig:pipeline} shows how a query proceeds. All techniques keep the results exact: the same paths with the same
+weights are returned (paths of equal weight may come in a different order).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[node distance=0.55cm and 0.5cm, every node/.style={font=\small},
+  box/.style={draw,rounded corners,align=center,minimum height=0.9cm,inner sep=4pt,fill=#1},
+  box/.default=white, ->, >=stealth]
+  \node[box=blue!8] (pre) {Optional preprocessing\\ arc flags / CH};
+  \node[box=green!8, right=of pre] (tree) {Shortest-path tree to $t$\\ Dijkstra (corridor, arc flags)\\ or PHAST};
+  \node[box=orange!10, right=of tree, yshift=0.75cm] (epp) {Eppstein: lazy\\ persistent heaps};
+  \node[box=orange!10, right=of tree, yshift=-0.75cm] (yen) {Yen--Lawler:\\ A* spurs, $h=d$};
+  \node[box, right=of epp, yshift=-0.75cm] (out) {paths in order\\ of weight};
+  \draw (pre) -- (tree); \draw (tree) -- (epp); \draw (tree) -- (yen);
+  \draw (epp) -- (out); \draw (yen) -- (out);
+\end{tikzpicture}
+\caption{A query. The tree supplies the distances $d(v)$ to the goal, which Eppstein uses for the sidetrack deltas and
+Yen--Lawler as exact A* lower bounds. The corridor bounds the tree, the enumeration and the spur searches.}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{Data layout}
+Vertices and edges are stored in flat arrays (structure of arrays): tail, head, weight and group per edge, and
+compressed adjacency rows by direction, rebuilt lazily after a change. Per-vertex query data (distance, tree edge,
+heap root) live in arrays that are reused across queries: a vertex's entry is valid only if its \emph{stamp} equals
+the current query number, so a query touches only the vertices it reaches and never resets the arrays. Public
+\texttt{Vertex}, \texttt{Edge} and \texttt{Path} types are small values that refer to these arrays.
+
+\subsection{Eppstein with lazy persistent heaps}
+For every vertex $v$ that the enumeration reaches, $H(v)$ is the persistent merge of $H(\mathrm{next}(v))$ and the
+sidetracks leaving $v$; merging copies only the $O(\log n)$ nodes on the right spine of a leftist heap. Heaps are
+built on demand, iteratively from the goal towards $v$, so long tree paths cause no deep recursion. A candidate is
+represented by a pointer to its parent candidate and one heap node, so creating one costs $O(1)$; extracting a
+candidate creates at most three successors (the two heap children of its last sidetrack and the root of the heap at
+the head of that sidetrack). Writing out a path costs time proportional to its length, which dominates in practice
+(\cref{sec:experiments}).
+
+\subsection{Detour corridor}
+Users rarely want arbitrarily long alternatives. With an absolute or relative detour limit $\Delta$, the backward
+Dijkstra stops at radius $d(s)+\Delta$: vertices farther away cannot lie on an admissible path. The same bound
+prunes candidates in the enumeration ($d(s)+\sum\delta\le d(s)+\Delta$) and the A* spur searches. This makes the
+number of paths finite even with cycles and turns a query between nearby vertices of a large graph into a local
+computation.
+
+\subsection{Simple paths: Yen--Lawler with exact A*}
+In networks with two-way edges most of Eppstein's walks are the shortest path plus a small loop, not real
+alternatives. With \texttt{SimplePathsOnly}, the library uses Yen's algorithm with Lawler's rule. The found paths
+form a trie; the edges to block at a root are the children of the root's trie node. Each spur search is an A* search
+with the tree distances $d(v)$ as potential. Blocking vertices and edges can only make distances longer, so $d$ is a
+consistent lower bound, and the search explores little more than the spur itself; with a corridor, it stops as soon
+as no admissible spur can exist. Spurs of a path are generated lazily when the next path is requested, so asking for
+one path costs no spur search.
+
+\subsection{Arc flags}
+The vertices are partitioned into regions (automatically by a breadth-first order, from a string, or from an external
+partitioner such as Mt-KaHyPar~\cite{mtkahypar}; the library writes the METIS input format). For every boundary
+vertex one backward Dijkstra marks the tight edges. A query relaxes only edges flagged for the goal's region. Because
+Eppstein needs the distance of \emph{every} vertex that can reach the goal, arc flags cannot skip vertices here, only
+edge relaxations; we measured a gain of about 20\% with good partitions, which is why the documentation recommends
+the corridor first.
+
+\subsection{Contraction hierarchy with PHAST}\label{sec:ch}
+The contraction orders vertices lazily by edge difference plus the number of contracted neighbors, uses witness
+searches with settled-vertex limits, and keeps the minimum of parallel edges. A query without a corridor then
+computes all distances with PHAST~\cite{delling2013phast}: an upward search from $t$ over reversed downward edges,
+followed by one sweep in descending rank over upward edges, with vertices stored in sweep order. Eppstein also needs
+the tree, not only the distances; we rebuild it from the \emph{original} edges that are tight
+($d(u)=w(u,v)+d(v)$), breadth-first from $t$, which is correct even with zero-weight cycles. With a corridor the
+bounded Dijkstra visits fewer vertices than PHAST and is used instead.
+
+\section{Three implementations}\label{sec:languages}
+
+\Cref{tab:loc} summarizes the implementations. They follow the same structure file by file; the interfaces differ
+only where the languages differ (exceptions vs.\ error values vs.\ \texttt{Result}, properties vs.\ methods,
+\texttt{IEnumerable} vs.\ Go iterators vs.\ Rust iterators).
+
+\begin{table}[t]
+\centering
+\caption{Implementations. Lines exclude blank and comment lines.}
+\label{tab:loc}
+\begin{tabular}{lrrl}
+\toprule
+ & library & tests & notable language-specific choices \\
+\midrule
+2010 original (\cs) & 486 & -- & object graph, sorted-list priority queue \\
+\cs{} (.NET 8/10) & \NumLocCs & \NumLocCsTests & \texttt{readonly struct} views, \texttt{PriorityQueue}, FsCheck \\
+Go 1.23+ & \NumLocGo & \NumLocGoTests & generic heap, \texttt{iter.Seq}, native fuzzing \\
+Rust 2021 & \NumLocRust & \NumLocRustTests & arenas with \texttt{u32} links, borrow-checked iterators \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Memory management.} In \cs{} and Go, heap nodes and candidates are small objects managed by the garbage
+collector. In Rust they live in two vectors (arenas) per query and refer to each other by \texttt{u32} indices; the
+arenas are cleared at the next query. There is no reference counting and no unsafe code in the library.
+
+\paragraph{Safety of iteration.} All three offer an iterator over the paths of a query. Changing the graph during the
+iteration is a runtime error in \cs{} (\texttt{InvalidOperationException}) and Go (panic). In Rust the iterator
+borrows the graph mutably, so the same mistake is a compile-time error; reading the graph during the iteration goes
+through the iterator.
+
+\paragraph{Labels.} Vertex labels are case-insensitive. \cs{} and Go keep the caller's string if it is already in
+upper case; the Rust version stores all label text in one string and indexes it with an open-addressing hash table,
+which avoids one heap allocation and one map entry per vertex. (A first, straightforward Rust version stored each
+label twice and needed 200\,MB instead of 112\,MB for the largest graph.)
+
+\paragraph{Testing.} The three implementations read the same golden files (graphs and expected paths, including
+DIMACS input), and compare against brute-force enumeration on thousands of random small graphs with cycles, zero
+and negative weights, corridors, arc flags and contraction hierarchies. \cs{} adds property-based tests (FsCheck),
+Go adds coverage-guided fuzzing of the importers and of the path enumeration. CI enforces coverage gates
+(\cs{} $\ge 95\%$ lines, Go $\ge 93\%$ statements).
+
+\section{Experiments}\label{sec:experiments}
+
+\paragraph{Setup.} All measurements ran on \NumCpu{} (4 virtual cores, Linux) with .NET~\NumDotnet, \NumGo{} and
+rustc~\NumRustc{} (release builds; Rust with one codegen unit). The benchmark is the same program in the three
+languages. It builds a $n\times n$ grid (vertex $v=y\,n+x$; edges to the right and lower neighbor, and every tenth
+vertex also to its left neighbor, which creates cycles); \texttt{two-way} grids have every street in both directions.
+Weights are $1+(r \bmod 100)$ for $r$ drawn from SplitMix64~\cite{steele2014} with seed 1, implemented identically
+in all three languages, so all of them build exactly the same graphs. The benchmark prints the weight of the last
+path, and the measurement script aborts if the languages disagree; they agreed in every scenario. Each scenario ran
+in a fresh process \NumRepeat{} times per language (once for the CH on $10^6$ vertices); we report medians.
+``Tree'' is the second identical query (\ie{} without one-time work such as building adjacency rows or JIT
+compilation), which is dominated by the shortest-path tree; ``next'' is the time for the remaining $k-1$ paths.
+Memory is the live heap after the first query: after a full collection in \cs{} and Go, and the allocator's
+live bytes in Rust.
+
+\input{tables/eppstein}
+
+\paragraph{Eppstein, corner to corner (\cref{tab:eppstein}).} Grids with $4\cdot10^4$ to $10^6$ vertices, paths
+across the whole graph. \input{tables/text-eppstein}
+
+\input{tables/local}
+
+\paragraph{Corridor (\cref{tab:local}).} Two nearby vertices in the middle of the $10^6$-vertex grid. Without a
+corridor, the tree covers the whole graph; with paths limited to 10\% above the shortest one, the tree covers only
+the neighborhood. \input{tables/text-local}
+
+\input{tables/build}
+
+\input{tables/yen}
+
+\paragraph{Simple paths (\cref{tab:yen}).} Two-way grids, where simple paths matter. \input{tables/text-yen}
+
+\input{tables/ch}
+
+\paragraph{Contraction hierarchy (\cref{tab:ch}).} \input{tables/text-ch}
+
+\input{tables/baseline}
+
+\paragraph{The 2010 original (\cref{fig:baseline}).} \input{tables/text-baseline}
+
+\section{Discussion: garbage collection and language}\label{sec:discussion}
+\input{tables/text-discussion}
+
+\section{AI-assisted development}\label{sec:ai}
+
+\subsection{Process}
+The author worked with an AI coding agent~\cite{claudecode} in a cloud development environment with access to the
+repository. The agent read and wrote code, ran builds, tests, benchmarks and a fuzzer, searched the literature,
+opened pull requests and reacted to CI results; the author decided what to do next and merged. All work happened in
+\NumSessions{} sessions over two days (\NumDays), with \NumPrompts{} human messages, most of them one line long.
+\NumPullRequests{} pull requests were merged before this paper. \Cref{tab:prompts} lists representative prompts verbatim
+(German, as typed, including typos), with translations and outcomes.
+
+\begin{table}[p]
+\centering
+\caption{Selected prompts, verbatim, and what followed. ``PR'' = merged pull request.}
+\label{tab:prompts}
+\footnotesize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.5\textwidth}>{\raggedright\arraybackslash}X}
+\toprule
+Prompt (translation) & Outcome \\
+\midrule
+\emph{Erstelle eine erwiterung ohne das interface zu brechen um arcs als Optimierung einzuführen} (Create an
+extension, without breaking the interface, to introduce arcs as an optimization) & The agent interpreted ``arcs'' as
+\emph{arc flags}, implemented them as an optional extension with automatic and manual partitions. \\
+\emph{Bitte rekursionsproblem fixen und auf .net core umstellen damit es unter linux kompiliert} (Please fix the
+recursion problem and move to .NET Core so it compiles on Linux) & Diagnosed the eager recursive sidetrack
+enumeration (endless on cycles), replaced it, ported to .NET~8. \\
+\emph{Convert it to a golang version, keep the interface unchanged.} & Go port with the same API and tests. \\
+\emph{Was könnte an diesem Projekt zum game changer werden?} (What could become a game changer for this project?)
+& A ranked list of ideas (corridor, Eppstein's heap enumeration, 64-bit weights, simple paths, \ldots). \\
+\emph{Wie kann man die Geschwindigkeit deutlich erhöhen} (How can the speed be increased significantly) &
+Profiling-driven list; then ``\emph{Punkt 1 und 2 und 3}'' (points 1, 2 and 3): persistent heaps, corridor,
+faster Dijkstra. PR. \\
+\emph{Schau dir das Projekt nochmal kritisch auf Performance und Code Qualität an. \ldots{} Multi threading ist keine
+gute idee.} (Look at the project critically again for performance and code quality. \ldots{} Multithreading is not
+a good idea.) & Review with 15 findings; after ``\emph{Alles umsetzen}'' (implement everything): array storage,
+query stamps, value-type views, golden tests. PR. \\
+\emph{Macht es sinn yen/lawler zu integrieren und wofür?} (Does it make sense to integrate Yen/Lawler, and what for?)
+\ldots{} \emph{Bitte implantieren und in doku genau erklären} (Please ``implant'' it and explain it precisely in the
+docs) & Explained loops in two-way networks; implemented Yen--Lawler with A* and documentation. PR. \\
+Expert feedback pasted by the author (MTX/DIMACS formats, Mt-KaHyPar as partitioner, CH/CCH, ``\emph{wenn man
+CH/Arcflags und Eppstein kombiniert könnte man daraus nen paper machen}'' -- combining CH/arc flags and Eppstein could
+make a paper), with ``\emph{Bitte bewerten und sortieren nach schweregrad und sinnhaftigkeit}'' (please assess and
+sort by severity and usefulness) & Ranked assessment; METIS export and partition import (tested with Mt-KaHyPar);
+literature review on CH with measurements, which recommended \emph{against} CH at that point. \\
+\emph{Bitte contradiction hierachies implementieren} (Please implement \emph{contradiction} hierarchies) &
+Understood as contraction hierarchies; CH with PHAST in \cs{} and Go, 3--10$\times$ faster trees, honest note on
+break-even. PR. \\
+\emph{Portiere das Projekt auf rust und ergänze die zeitmessung. Ziel ist es nun ein paper aus allem zu erstellen
+\ldots{}} (Port the project to Rust and add the timing. The goal is now to write a paper from everything \ldots) &
+Rust port, identical benchmark in three languages, this paper. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{What the human contributed}
+Three kinds of input shaped the result, and none of them was a specification. \emph{The old algorithm} fixed the
+interface (labels, groups, \texttt{FindShortestPath}/\texttt{FindNextShortestPath}) and the domain; much of the
+later work kept that interface or broke it only when asked. \emph{Short, sometimes playful prompts} (``game
+changer'', ``next level'', ``top notch standard'') delegated the search for improvements to the agent but kept the
+decisions with the author, who chose among proposed items by number. \emph{Expert ideas} (arc flags with a real
+partitioner, CH, the paper idea) came from a colleague's review and redirected the work towards algorithm
+engineering. Constraints such as ``no multithreading'' and ``you may break the interface'' were the most effective
+prompts per word.
+
+\subsection{What the agent did, and where it failed}
+The agent wrote all code, tests, documentation and benchmarks of version~2, ran every measurement in this paper, and
+proposed most of the ideas that were implemented. It also argued \emph{against} ideas when its measurements did not
+support them: it first advised against contraction hierarchies, because the measured bottleneck of long queries was
+the number of spur searches, and after being asked to implement them it reported that the gain on grids
+(3--10$\times$ for the tree) is below the order of magnitude reported for road networks. The failures we observed
+were caught by tests, not by review:
+\begin{itemize}
+  \item Hand-computed expected values in new tests were wrong several times (\eg{} the weights of simple paths in a
+        small two-way graph, and the edges of Eppstein's example typed from memory in the Rust tests); in each case
+        brute force or the shared golden data showed that the library was right and the expectation wrong.
+  \item Fuzzing found that the Go DIMACS importer treated some Unicode white space differently from line splitting,
+        and that the agent's own test harness had an $O(n^2)$ sort.
+  \item A scripted text edit broke a Go struct tag; the build caught it.
+  \item The first Rust port stored labels twice; the cross-language memory comparison exposed it.
+  \item The environment could not download the DIMACS road networks (HTTP-only server behind an HTTPS-only proxy),
+        so all experiments use synthetic grids (\cref{sec:limitations}).
+\end{itemize}
+
+\subsection{Observations}
+The decisive factor for reliability was the test infrastructure that the agent built early: golden data shared by all
+implementations, brute-force oracles and fuzzing. It made large refactorings (object graph to arrays; three
+languages) cheap to verify and let the author accept changes without reading every line. The agent was most useful as
+an algorithm engineer when asked open questions and given freedom, and most precise when given constraints. It never
+needed a formal specification; it needed a way to check itself.
+
+\section{Limitations}\label{sec:limitations}
+All experiments use synthetic grids, which are a hard case for contraction hierarchies and favorable for corridors;
+real road networks (DIMACS~\cite{dimacs9}, OpenStreetMap) are the obvious next step. The machine is a shared cloud VM;
+we report medians of fresh processes, but differences below about 10--20\% should be read as noise. The memory
+numbers are measured differently in each language (\cref{sec:experiments}). The case study has a sample size of one
+author and one agent, and the author wrote this paper with the agent.
+
+\section{Conclusion}
+A small 2010 prototype became a library that combines Eppstein's enumeration, a detour corridor, Yen--Lawler with
+exact A*, arc flags and PHAST on a contraction hierarchy, in three languages with identical results. Algorithmic
+choices changed the running time by orders of magnitude; the choice between a garbage-collected and a
+non-garbage-collected language changed it by tens of percent, once the data layout avoided allocation in the hot
+loops. Promising next steps are the sidetrack-based simple-path algorithms~\cite{kurz2016,alzoobi2023} combined with
+(R)PHAST or CCH for the repeated tree computations, and experiments on real road networks. The code, the data and
+the scripts that produced every number in this paper are available in the repository~\cite{repo}.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

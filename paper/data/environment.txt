@@ -1,0 +1,5 @@
+CPU(s):                                  4
+Model name:                              Intel(R) Xeon(R) Processor @ 2.10GHz
+10.0.114
+go version go1.24.7 linux/amd64
+rustc 1.97.0 (2d8144b78 2026-07-07)

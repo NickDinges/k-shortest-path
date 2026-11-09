@@ -1,0 +1,6 @@
+The contraction takes 2.6--3.2\,s for the $200^2$ two-way grid and 66--74\,s for the $10^6$-vertex grid, with about
+three million shortcuts. PHAST then computes the full tree of the $10^6$-vertex grid in 76--97\,ms instead of
+255--312\,ms with Dijkstra (2.6--4.0$\times$). Go and Rust produce exactly the same number of shortcuts, because
+their priority queues break ties identically; \cs{} differs by less than 0.1\%. The speed-up is below the order of
+magnitude reported for road networks~\cite{delling2013phast}: grids are a hard case for contraction hierarchies, and
+our sweep is single-threaded and does not use SIMD.

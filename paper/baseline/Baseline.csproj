@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Times the original 2010 implementation (v1/) against the current library on small acyclic
+       grids, where v1 still terminates. Run: dotnet run -c Release with an optional maximum grid size -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS0659;CS0661;CS0660;CS8981;CS1591;CS0108</NoWarn>
+    <RootNamespace>Baseline</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Eppstein/Eppstein.csproj" />
+  </ItemGroup>
+</Project>
