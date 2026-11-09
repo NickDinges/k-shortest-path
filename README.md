@@ -1,9 +1,25 @@
 # k-shortest-path
 
 Find the **shortest route** between two points in a network, then the **second shortest**, the
-**third shortest**, and so on. This is a C# implementation of
+**third shortest**, and so on. This is a C# implementation (with Go and Rust ports) of
 [Eppstein's algorithm](http://www.ics.uci.edu/~eppstein/pubs/Epp-SJC-98.pdf) for the
 *k shortest paths* problem.
+
+<a href="paper/main.pdf"><img src="docs/paper-first-page.png" alt="First page of the paper" width="170" align="right"></a>
+
+### 📄 The paper
+
+**[From a 2010 Prototype to Contraction Hierarchies in Three Languages](paper/main.pdf)**: how this
+library grew from a 2010 prototype into Eppstein + Yen–Lawler + arc flags + contraction hierarchies,
+in C#, Go and Rust. An experiment: code, tests, measurements and text were generated with Claude.
+
+- Same graphs, three languages: within **1.3×** of each other; garbage collection makes **no
+  measurable difference**.
+- Algorithms beat languages: first path **40 s → 0.12 ms** compared with the 2010 version.
+
+[Read the PDF](paper/main.pdf) · [Summary](#15-the-paper) · [Reproduce](paper/README.md)
+
+<br clear="right">
 
 ![Example graph with the three shortest paths from S to T highlighted](docs/eppstein-example.svg)
 
@@ -11,8 +27,7 @@ Find the **shortest route** between two points in a network, then the **second s
 blue and green. The number under each letter is the distance from that point to T.*
 
 > **Go and Rust versions:** ports with the same API and results live in [`go/`](go/README.md) and
-> [`rust/`](rust/README.md). A paper comparing the three and describing the algorithms and the
-> AI-assisted development is in [`paper/`](paper/README.md) ([PDF](paper/main.pdf)).
+> [`rust/`](rust/README.md).
 
 **Contents**
 
