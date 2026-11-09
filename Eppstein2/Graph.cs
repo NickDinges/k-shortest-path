@@ -18,14 +18,14 @@ namespace Eppstein
         /// <summary>
         /// Weight of node (edge)
         /// </summary>
-        public int Weight;
+        public long Weight;
 
         /// <summary>
         /// Public constructor
         /// </summary>
         /// <param name="_edge">Edge object</param>
         /// <param name="_weight">Weight of node</param>
-        public SP_Node(Edge _edge, int _weight)
+        public SP_Node(Edge _edge, long _weight)
         {
             this.Edge = _edge;
             this.Weight = _weight;
@@ -40,7 +40,7 @@ namespace Eppstein
         /// <exception cref="System.Exception">Thrown when obj is not SP_Node type</exception>
         int IComparable.CompareTo(object _obj)
         {
-            return Math.Sign(this.Weight - ((SP_Node)_obj).Weight);
+            return this.Weight.CompareTo(((SP_Node)_obj).Weight);
         }
         /// <summary>
         /// Returns node's descriptive string
@@ -55,16 +55,29 @@ namespace Eppstein
     /// <summary>
     /// Sidetracks collection, with comparing capability
     /// </summary>
+    /// <remarks>
+    /// Nodes created during path enumeration only store their parent and one additional
+    /// sidetrack, so creating a candidate costs O(1) time and memory instead of copying the
+    /// whole sidetrack list. The full list is built on demand by <see cref="Sidetracks"/>.
+    /// </remarks>
     public class ST_Node : IComparable
     {
         /// <summary>
-        /// Collection of edges (sidetracks), not exactly a full path
+        /// Explicit sidetrack collection (root nodes only), null for chained nodes
         /// </summary>
-        public Path Sidetracks;
+        private readonly Path explicitSidetracks;
         /// <summary>
-        /// Weight of node (sum of sidetracks)
+        /// Parent node (same sidetracks without the last one), null for root nodes
         /// </summary>
-        public int Weight;
+        public readonly ST_Node Parent;
+        /// <summary>
+        /// Last sidetrack of this node, null for root nodes
+        /// </summary>
+        public readonly Edge LastSidetrack;
+        /// <summary>
+        /// Weight of node (sum of sidetrack deltas)
+        /// </summary>
+        public long Weight;
 
         /// <summary>
         /// Public constructor
@@ -73,8 +86,57 @@ namespace Eppstein
         /// <remarks>Weight is calculated using path's weight</remarks>
         public ST_Node(Path _sidetracks)
         {
-            this.Sidetracks = _sidetracks;
+            this.explicitSidetracks = _sidetracks;
             this.Weight = _sidetracks.DeltaWeight;
+        }
+        /// <summary>
+        /// Creates a child node: parent's sidetracks plus one more sidetrack
+        /// </summary>
+        /// <param name="_parent">Parent node</param>
+        /// <param name="_sidetrack">Additional sidetrack</param>
+        /// <remarks>Weight is parent's weight plus the delta of the new sidetrack</remarks>
+        public ST_Node(ST_Node _parent, Edge _sidetrack)
+        {
+            this.Parent = _parent;
+            this.LastSidetrack = _sidetrack;
+            this.Weight = _parent.Weight + _sidetrack.Delta;
+        }
+
+        /// <summary>
+        /// Collection of edges (sidetracks), not exactly a full path
+        /// </summary>
+        /// <remarks>Built on demand from the chain of parent nodes</remarks>
+        public Path Sidetracks
+        {
+            get
+            {
+                List<Edge> reversed = new List<Edge>();
+                ST_Node node = this;
+                while (node.explicitSidetracks == null)
+                {
+                    reversed.Add(node.LastSidetrack);
+                    node = node.Parent;
+                }
+                Path result = new Path();
+                result.AddRange(node.explicitSidetracks);
+                for (int i = reversed.Count - 1; i >= 0; i--)
+                    result.Add(reversed[i]);
+                return result;
+            }
+        }
+        /// <summary>
+        /// Head of the last sidetrack, null if there are no sidetracks
+        /// </summary>
+        public Vertex LastHead
+        {
+            get
+            {
+                if (this.LastSidetrack != null)
+                    return this.LastSidetrack.Head;
+                if (this.explicitSidetracks != null && this.explicitSidetracks.Count > 0)
+                    return this.explicitSidetracks[this.explicitSidetracks.Count - 1].Head;
+                return null;
+            }
         }
 
         /// <summary>
@@ -86,7 +148,7 @@ namespace Eppstein
         /// <exception cref="System.Exception">Thrown when obj is not ST_Node type</exception>
         int IComparable.CompareTo(object _obj)
         {
-            return Math.Sign(this.Weight - ((ST_Node)_obj).Weight);
+            return this.Weight.CompareTo(((ST_Node)_obj).Weight);
         }
         /// <summary>
         /// Returns node's descriptive string
@@ -109,6 +171,10 @@ namespace Eppstein
         /// Linear array of vertices
         /// </summary>
         private List<Vertex> Vertices;
+        /// <summary>
+        /// Vertices by label (case-insensitive), for constant time lookup
+        /// </summary>
+        private Dictionary<string, Vertex> VertexIndex;
         /// <summary>
         /// Collections of Sidetracks in graph, ordered by total delta
         /// </summary>
@@ -134,6 +200,7 @@ namespace Eppstein
         public Graph()
         {
             Vertices = new List<Vertex>();
+            VertexIndex = new Dictionary<string, Vertex>(StringComparer.InvariantCultureIgnoreCase);
             Ready = false;
         }
         /// <summary>
@@ -148,6 +215,7 @@ namespace Eppstein
             // Scans vertices' string, creates objects, and add to vertices' list
             Ready = false;  // must rebuild trees
             Vertices.Clear();  // Remove all previous vertices
+            VertexIndex.Clear();
             ResetArcFlags();   // Partition refers to removed vertices
 
             string[] vertexList = _vertices.ToUpper().Split(new char[] { ',' });
@@ -164,7 +232,11 @@ namespace Eppstein
                         return false;
                 }
                 if (GetVertex(_label)==null)
-                    Vertices.Add(new Vertex(_label));
+                {
+                    Vertex v = new Vertex(_label);
+                    Vertices.Add(v);
+                    VertexIndex.Add(_label, v);
+                }
             }
 
             return true;
@@ -178,7 +250,7 @@ namespace Eppstein
         /// <param name="_group">Group name for all edges</param>
         /// <returns>True if vertices are valid</returns>
         /// <remarks>Count of tails must match count of heads, all vertices must exist</remarks>
-        public bool CreateEdges(string _tails, string _heads, int _weight, string _group)
+        public bool CreateEdges(string _tails, string _heads, long _weight, string _group)
         {
             List<Vertex> tails = this.ParseVertices(_tails.ToUpper());
             List<Vertex> heads = this.ParseVertices(_heads.ToUpper());
@@ -206,7 +278,7 @@ namespace Eppstein
         /// </summary>
         /// <param name="_group">Group name of edges to be affected</param>
         /// <param name="_weight">New weights</param>
-        public void EdgeGroupWeights(string _group, int _weight)
+        public void EdgeGroupWeights(string _group, long _weight)
         {
             string group = _group.ToUpper();
 
@@ -266,7 +338,7 @@ namespace Eppstein
                 return new Path(); // Invalid path
 
             // Lazy expansion: enqueues all tracks having this one as prefix plus one sidetrack
-            AddSidetracks(node.Sidetracks);
+            AddSidetracks(node);
 
             // Returns path reconstructed from sidetracks
             return RebuildPath(node.Sidetracks);
@@ -306,12 +378,8 @@ namespace Eppstein
             if (string.IsNullOrEmpty(_label))
                 return null;
 
-            foreach (Vertex _v in Vertices)
-            {
-                if (_v.Equals(_label))
-                    return _v;
-            }
-            return null;
+            Vertex v;
+            return VertexIndex.TryGetValue(_label, out v) ? v : null;
         }
         /// <summary>
         /// Clears pointers to next edge in shortest path for all vertices
@@ -322,7 +390,7 @@ namespace Eppstein
             foreach (Vertex _v in this.Vertices)
             {
                 _v.EdgeToPath = null;
-                _v.Distance = int.MinValue;
+                _v.Distance = Vertex.Unreached;
             }
         }
         /// <summary>
@@ -347,6 +415,7 @@ namespace Eppstein
                 if (v!=null)
                     foreach (Edge _e in v.RelatedEdges) // Evaluate all incoming edges
                         if (_e.Head==v && _e.Weight>=0  // Ignore negative edges
+                            && _e.Tail.Distance == Vertex.Unreached  // Tail already settled, cannot improve
                             && _e.HasArcFlag(targetRegion))  // Arc flags: skip arcs not on any shortest path into t's region
                             fringe.Enqueue(new SP_Node(_e, _e.Weight + _e.Head.Distance));
 
@@ -356,7 +425,7 @@ namespace Eppstein
 
                 Edge e = node.Edge;
                 v = e.Tail;
-                if (v.Distance == int.MinValue) // Vertex distance to endpoint not calculated yet
+                if (v.Distance == Vertex.Unreached) // Vertex distance to endpoint not calculated yet
                 {
                     v.Distance = e.Weight + e.Head.Distance;
                     v.EdgeToPath = e;
@@ -377,15 +446,15 @@ namespace Eppstein
         /// Enqueues all children of a track: the same sidetracks plus one more sidetrack, taken from
         /// a vertex of the shortest path tree between the head of the last sidetrack (or s) and t
         /// </summary>
-        /// <param name="_p">Sidetrack collection of an extracted track</param>
+        /// <param name="_node">Extracted track</param>
         /// <remarks>
         /// Every sidetrack collection has a unique parent (itself without its last sidetrack), so each
         /// path is generated exactly once. Deltas are non-negative, so children never are shorter than
         /// their parent and extraction order stays correct. Iterative and lazy: works with cycles.
         /// </remarks>
-        private void AddSidetracks(Path _p)
+        private void AddSidetracks(ST_Node _node)
         {
-            Vertex v = _p.Count == 0 ? this.SourceVertex : _p[_p.Count - 1].Head;
+            Vertex v = _node.LastHead ?? this.SourceVertex;
 
             // Walks shortest path tree from v to t (tree paths are simple, so this terminates)
             while (v != null)
@@ -393,12 +462,7 @@ namespace Eppstein
                 foreach (Edge _e in v.RelatedEdges)
                 {
                     if (_e.IsSidetrackOf(v) && (_e.Head.EdgeToPath != null || _e.Head == this.EndVertex))
-                    {
-                        Path p = new Path();
-                        p.AddRange(_p);
-                        p.Add(_e);
-                        this.PathsHeap.Enqueue(new ST_Node(p));
-                    }
+                        this.PathsHeap.Enqueue(new ST_Node(_node, _e));  // O(1): no copy of sidetracks
                 }
                 v = v.Next;
             }

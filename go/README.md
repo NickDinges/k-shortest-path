@@ -111,7 +111,8 @@ properties, so a few names differ:
 | `edge.Tail`, `edge.Head`, `edge.Weight`, `edge.Group` | `edge.Tail`, `edge.Head`, `edge.Weight`, `edge.Group` |
 | `edge.Delta`, `edge.HasArcFlag(r)`, `edge.IsSidetrackOf(v)` | `edge.Delta()`, `edge.HasArcFlag(r)`, `edge.IsSidetrackOf(v)` |
 | `vertex.Next`, `vertex.Distance`, `vertex.EdgeToPath`, `vertex.Region`, `vertex.Object` | `vertex.Next()`, `vertex.Distance`, `vertex.EdgeToPath`, `vertex.Region`, `vertex.Object` |
-| `int.MinValue` ("distance unknown") | `eppstein.Unreached` |
+| `long` weights and distances | `int64` weights and distances |
+| `Vertex.Unreached` (`long.MinValue`, "distance unknown") | `eppstein.Unreached` (`math.MinInt64`) |
 
 ## Things to know
 
@@ -132,8 +133,24 @@ Go-specific:
 
 - A `Graph` is **not safe for concurrent use**. Use one graph per goroutine or protect it with a
   `sync.Mutex`.
-- The priority queue is a binary heap (`container/heap`), so very long path lists are produced
-  faster than with the sorted list of the C# version.
+- Weights are `int64`. Untyped constants work directly (`g.CreateEdges("A", "B", 5, "x")`);
+  an `int` variable needs a conversion: `g.CreateEdges("A", "B", int64(w), "x")`.
+- The zero value `eppstein.Graph{}` is usable, but `eppstein.NewGraph()` is the recommended way.
+
+## Performance
+
+Same grid graphs as in [section 10 of the main README](../README.md#10-performance)
+(4-core cloud VM):
+
+| Vertices | Edges | Build graph | First path + next 10,000 paths |
+|---|---|---|---|
+| 2,500 | 5,100 | 6 ms | 104 ms |
+| 10,000 | 20,700 | 17 ms | 182 ms |
+| 40,000 | 83,400 | 87 ms | 354 ms |
+
+```sh
+go test -run none -bench . -benchmem ./eppstein
+```
 
 ## Project layout
 
@@ -144,7 +161,7 @@ Go-specific:
 | `eppstein/serialize.go` | Graphviz (DOT) output |
 | `eppstein/elements.go` | `Vertex`, `Edge` and `Path` types |
 | `eppstein/pqueue.go` | Priority queue used by the algorithm |
-| `eppstein/*_test.go` | Tests and runnable examples |
+| `eppstein/*_test.go` | Tests, benchmarks and runnable examples |
 | `cmd/eppstein/main.go` | Demo program (`go run ./cmd/eppstein [k] [--dot file]`) |
 
 ## Moving this module into its own repository

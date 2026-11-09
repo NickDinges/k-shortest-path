@@ -24,9 +24,13 @@ namespace Eppstein
         /// </summary>
         public Edge EdgeToPath = null;
         /// <summary>
-        /// Distance to endpoint in shortest path calculation
+        /// Value of <see cref="Distance"/> while the distance to the endpoint is unknown
         /// </summary>
-        public int Distance = int.MinValue;
+        public const long Unreached = long.MinValue;
+        /// <summary>
+        /// Distance to endpoint in shortest path calculation, <see cref="Unreached"/> if unknown
+        /// </summary>
+        public long Distance = Unreached;
         /// <summary>
         /// Collection of out edges not part of shortest path
         /// </summary>
@@ -107,7 +111,7 @@ namespace Eppstein
         /// <summary>
         /// Weight of edge
         /// </summary>
-        public int Weight;
+        public long Weight;
         /// <summary>
         /// Group label of edge
         /// </summary>
@@ -123,7 +127,7 @@ namespace Eppstein
         /// Returns the sidetrack delta (deviation from shortest path)
         /// Only is valid when shortest path tree has been calculated
         /// </summary>
-        public int Delta
+        public long Delta
         {
             get { return this.Weight + this.Head.Distance - this.Tail.Distance; }
         }
@@ -137,7 +141,7 @@ namespace Eppstein
         /// <param name="_weight">Weight of edge</param>
         /// <param name="_group">Label of group where edge belongs to</param>
         /// <remarks>Edge is directional, goes from tail to head</remarks>
-        public Edge(Vertex _tail, Vertex _head, int _weight, string _group)
+        public Edge(Vertex _tail, Vertex _head, long _weight, string _group)
         {
             Tail = _tail;
             Head = _head;
@@ -208,11 +212,11 @@ namespace Eppstein
         /// <summary>
         /// Returns sum of all weights of edges in the path
         /// </summary>
-        public int Weight
+        public long Weight
         {
             get
             {
-                int total = 0;
+                long total = 0;
                 foreach (Edge e in this)
                     total += e.Weight;
                 return total;
@@ -221,11 +225,11 @@ namespace Eppstein
         /// <summary>
         /// Returns sum of all deltas of edges in the path
         /// </summary>
-        public int DeltaWeight
+        public long DeltaWeight
         {
             get
             {
-                int total = 0;
+                long total = 0;
                 foreach (Edge e in this)
                     total += e.Delta;
                 return total;

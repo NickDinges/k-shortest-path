@@ -3,46 +3,71 @@ using System.Text;
 namespace System.Collections.Generic
 {
     /// <summary>
-    /// Generic class for priority queue, it is based on a limited sorted array
+    /// Generic priority queue, based on a binary min-heap
     /// </summary>
     /// <typeparam name="TObj">Type of data object, must implement IComparable interface</typeparam>
-    /// <remarks>Lower weights in queue has higher priority</remarks>
+    /// <remarks>
+    /// Lower weights in queue have higher priority. Enqueue and Dequeue take O(log n).
+    /// Elements comparing as equal are dequeued in insertion order.
+    /// </remarks>
     class PriorityQueue<TObj>
     {
         /// <summary>
-        /// Sorted list of objects, acts like a binary tree
+        /// Heap entry: object plus insertion number, used to keep insertion order among equal objects
         /// </summary>
-        private List<TObj> Queue = null;
+        private struct Entry
+        {
+            public TObj Obj;
+            public long Sequence;
+        }
+
+        /// <summary>
+        /// Heap array: element i has children 2i+1 and 2i+2, root (minimum) at index 0
+        /// </summary>
+        private List<Entry> Heap = null;
+        /// <summary>
+        /// Comparer for TObj, uses its IComparable implementation
+        /// </summary>
+        private readonly IComparer<TObj> Comparer = Comparer<TObj>.Default;
+        /// <summary>
+        /// Insertion counter
+        /// </summary>
+        private long NextSequence = 0;
 
         /// <summary>
         /// Returns count of elements in queue
         /// </summary>
         public int Count
         {
-            get { return Queue.Count; }
+            get { return Heap.Count; }
         }
 
         /// <summary>
         /// Public constructor
         /// </summary>
-        /// <param name="_queueSize">Maximum size of queue</param>
+        /// <param name="_queueSize">Initial capacity of queue</param>
         /// <exception cref="System.Exception">Throws when TObj does not implement IComparable interface</exception>
         public PriorityQueue(int _queueSize)
         {
             if (typeof(TObj).GetInterface("IComparable") == null)
                 throw new Exception("PriorityQueue: Templated class " + typeof(TObj) + " does not implement IComparable.");
-            
-            Queue = new List<TObj>(_queueSize);
+
+            Heap = new List<Entry>(Math.Max(_queueSize, 0));
         }
 
+        /// <summary>
+        /// Returns the elements in priority order, separated by commas (lowest weight last)
+        /// </summary>
         public override string ToString()
         {
+            List<Entry> sorted = new List<Entry>(Heap);
+            sorted.Sort(Compare);
             StringBuilder result = new StringBuilder();
-            for (int i = this.Count-1; i >= 0; i--)
+            for (int i = sorted.Count - 1; i >= 0; i--)
             {
-                if (i < this.Count-1)
+                if (i < sorted.Count - 1)
                     result.Append(',');
-                result.Append(Queue[i]);
+                result.Append(sorted[i].Obj);
             }
             return result.ToString();
         }
@@ -52,10 +77,10 @@ namespace System.Collections.Generic
         /// </summary>
         public void Clear()
         {
-            Queue.Clear();
+            Heap.Clear();
         }
         /// <summary>
-        /// Inserts an element in the queue, in the proper position according with weight
+        /// Inserts an element in the queue, according with its weight
         /// </summary>
         /// <param name="_obj">Object to enqueue, ignores if it is null</param>
         public void Enqueue(TObj _obj)
@@ -63,25 +88,17 @@ namespace System.Collections.Generic
             if (_obj == null)
                 return;
 
-            if (Queue.Count == 0) // Fast special case for empty queue
-            {
-                Queue.Add(_obj);
-                return;
-            }
+            Heap.Add(new Entry { Obj = _obj, Sequence = NextSequence++ });
 
-            // BinarySearch for element or best position
-            int posNew = Queue.BinarySearch(_obj);
-
-            // Inserts element in proper sorted position
-            if (posNew >= 0)   // Similar element exists on queue, inserts new before
-                Queue.Insert(posNew, _obj);
-            else
+            // Sift up
+            int i = Heap.Count - 1;
+            while (i > 0)
             {
-                posNew = ~posNew;  // Binary invertion, as specified in BinarySearch() method help
-                if (posNew == Queue.Count)
-                    Queue.Add(_obj);
-                else
-                    Queue.Insert(posNew, _obj);
+                int parent = (i - 1) / 2;
+                if (Compare(Heap[i], Heap[parent]) >= 0)
+                    break;
+                Swap(i, parent);
+                i = parent;
             }
         }
         /// <summary>
@@ -90,13 +107,32 @@ namespace System.Collections.Generic
         /// <returns>Reference to enqueued object, null if queue is empty</returns>
         public TObj Dequeue()
         {
-            if (Queue.Count == 0)
+            if (Heap.Count == 0)
                 return default(TObj);
 
-            TObj _obj = Queue[0];
-            Queue.RemoveAt(0);
+            TObj result = Heap[0].Obj;
+            int last = Heap.Count - 1;
+            Heap[0] = Heap[last];
+            Heap.RemoveAt(last);
 
-            return _obj;
+            // Sift down
+            int i = 0;
+            int count = Heap.Count;
+            while (true)
+            {
+                int left = 2 * i + 1;
+                if (left >= count)
+                    break;
+                int smallest = left;
+                int right = left + 1;
+                if (right < count && Compare(Heap[right], Heap[left]) < 0)
+                    smallest = right;
+                if (Compare(Heap[smallest], Heap[i]) >= 0)
+                    break;
+                Swap(i, smallest);
+                i = smallest;
+            }
+            return result;
         }
         /// <summary>
         /// Returns a reference to element from start of queue, without removing it
@@ -104,10 +140,28 @@ namespace System.Collections.Generic
         /// <returns>Reference to enqueued object, null if queue is empty</returns>
         public TObj Root()
         {
-            if (Queue.Count == 0)
+            if (Heap.Count == 0)
                 return default(TObj);
 
-            return Queue[0];
+            return Heap[0].Obj;
+        }
+
+        /// <summary>
+        /// Compares two entries by object, then by insertion order
+        /// </summary>
+        private int Compare(Entry _a, Entry _b)
+        {
+            int result = Comparer.Compare(_a.Obj, _b.Obj);
+            return result != 0 ? result : _a.Sequence.CompareTo(_b.Sequence);
+        }
+        /// <summary>
+        /// Swaps two heap entries
+        /// </summary>
+        private void Swap(int _i, int _j)
+        {
+            Entry tmp = Heap[_i];
+            Heap[_i] = Heap[_j];
+            Heap[_j] = tmp;
         }
     }
 }

@@ -6,7 +6,7 @@ import "container/heap"
 // seq keeps insertion order among equal weights (deterministic results).
 type queueItem[T any] struct {
 	value  T
-	weight int
+	weight int64
 	seq    uint64
 }
 
@@ -43,13 +43,13 @@ func newPriorityQueue[T any](capacity int) *priorityQueue[T] {
 func (q *priorityQueue[T]) Len() int { return len(q.items) }
 
 // Enqueue inserts a value with the given weight.
-func (q *priorityQueue[T]) Enqueue(value T, weight int) {
+func (q *priorityQueue[T]) Enqueue(value T, weight int64) {
 	q.seq++
 	heap.Push(&q.items, queueItem[T]{value: value, weight: weight, seq: q.seq})
 }
 
 // Dequeue extracts the value with the lowest weight, ok is false if the queue is empty.
-func (q *priorityQueue[T]) Dequeue() (value T, weight int, ok bool) {
+func (q *priorityQueue[T]) Dequeue() (value T, weight int64, ok bool) {
 	if len(q.items) == 0 {
 		return value, 0, false
 	}

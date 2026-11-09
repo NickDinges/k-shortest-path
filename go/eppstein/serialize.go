@@ -92,7 +92,7 @@ func (g *Graph) SerializeTo(w io.Writer, highlight []Path) error {
 				continue
 			}
 			attributes := []string{
-				"label=" + quote(strconv.Itoa(e.Weight)),
+				"label=" + quote(strconv.FormatInt(e.Weight, 10)),
 				"tooltip=" + quote("group "+e.Group),
 			}
 			var styles []string
@@ -125,7 +125,7 @@ func (g *Graph) SerializeTo(w io.Writer, highlight []Path) error {
 func (g *Graph) vertexStatement(v *Vertex, highlighted map[*Vertex]bool) string {
 	label := v.String()
 	if g.ready && v.Distance != Unreached { // distance to endpoint is known
-		label += "\n" + strconv.Itoa(v.Distance)
+		label += "\n" + strconv.FormatInt(v.Distance, 10)
 	}
 	attributes := []string{"label=" + quote(label)}
 	if g.ready && (v == g.sourceVertex || v == g.endVertex) {

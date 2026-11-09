@@ -10,7 +10,4 @@
     <!-- Assembly attributes are kept in Properties/AssemblyInfo.cs -->
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
-  <ItemGroup>
-    <InternalsVisibleTo Include="Eppstein2.Tests" />
-  </ItemGroup>
 </Project>

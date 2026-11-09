@@ -259,8 +259,8 @@ func (g *Graph) computeArcFlags() {
 }
 
 // backwardDistances computes the distance to target for every vertex that can reach it.
-func (g *Graph) backwardDistances(target *Vertex) map[*Vertex]int {
-	dist := map[*Vertex]int{target: 0}
+func (g *Graph) backwardDistances(target *Vertex) map[*Vertex]int64 {
+	dist := map[*Vertex]int64{target: 0}
 	fringe := newPriorityQueue[*Edge](len(g.vertices))
 	v := target
 	for {

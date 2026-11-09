@@ -153,7 +153,7 @@ namespace Eppstein
         {
             List<string> attributes = new List<string>();
             string label = _v.ToString();
-            if (Ready && _v.Distance != int.MinValue)  // Distance to endpoint is known
+            if (Ready && _v.Distance != Vertex.Unreached)  // Distance to endpoint is known
                 label += "\n" + _v.Distance.ToString(CultureInfo.InvariantCulture);
             attributes.Add("label=" + Quote(label));
             if (Ready && (_v == SourceVertex || _v == EndVertex))
