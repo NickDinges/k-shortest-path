@@ -3,9 +3,10 @@
 \caption{Runtime settings (median ms). Turning garbage collection off (Go) or making it rare (\cs{}) has no measurable effect; disabling tiered compilation makes short \cs{} runs 2--4$\times$ faster.}
 \label{tab:runtime}
 \small
-\begin{tabular}{lrrrrrr}
+\begin{tabular}{l>{\raggedleft\arraybackslash}p{1.25cm}>{\raggedleft\arraybackslash}p{1.25cm}>{\raggedleft\arraybackslash}p{1.25cm}>{\raggedleft\arraybackslash}p{1.25cm}>{\raggedleft\arraybackslash}p{1.25cm}>{\raggedleft\arraybackslash}p{1.25cm}}
 \toprule
- & \multicolumn{2}{c}{Eppstein $200^2$, $k=10^4$} & \multicolumn{2}{c}{Eppstein $1000^2$, $k=10^5$} & \multicolumn{2}{c}{Yen $200^2$, $k=10^3$} \\ \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+ & \multicolumn{2}{c}{Eppstein $200^2$} & \multicolumn{2}{c}{Eppstein $1000^2$} & \multicolumn{2}{c}{Yen $200^2$} \\
+ & \multicolumn{2}{c}{$k=10^4$} & \multicolumn{2}{c}{$k=10^5$} & \multicolumn{2}{c}{$k=10^3$} \\ \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
  & tree & next & tree & next & tree & next \\
 \midrule
 \cs{} default & 27.7 & 76.2 & \num{255} & \num{3441} & 38.1 & \num{5485} \\
