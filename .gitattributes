@@ -2,3 +2,5 @@
 * text=auto
 *.svg binary
 *.doc binary
+*.pdf binary
+*.png binary
