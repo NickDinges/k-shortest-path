@@ -682,6 +682,12 @@ func TestImportDimacsReadsGraphAndReportsErrorsWithLineNumber(t *testing.T) {
 		"p sp 2 1\np sp 2 1":  "line 2:", // two problem lines
 		"p max 2 1":           "line 1:", // other problem type
 		"x 1 2":               "line 1:", // unknown line type
+		// absurd vertex counts: a few bytes must not overflow or allocate all memory
+		"p sp 2147483647 1\na 1 2 3":  "line 1:",
+		"p sp 400000000 1\na 1 2 3":   "line 1:",
+		"p sp 9223372036854775807 1":  "line 1:",
+		"p sp 18446744073709551616 1": "line 1:", // beyond uint64
+		"p sp -5 1":                   "line 1:",
 	} {
 		if _, err := NewGraph().ImportDimacs(strings.NewReader(text)); err == nil || !strings.HasPrefix(err.Error(), line) {
 			t.Errorf("%q: error = %v, want %s", text, err, line)
@@ -690,6 +696,13 @@ func TestImportDimacsReadsGraphAndReportsErrorsWithLineNumber(t *testing.T) {
 	if _, err := g.ImportDimacs(nil); err == nil {
 		t.Error("nil reader accepted")
 	}
+	if _, err := NewGraph().ImportDimacsLimit(strings.NewReader("p sp 3 0"), 2); err == nil || !strings.Contains(err.Error(), "limit of 2") {
+		t.Errorf("limit 2: error = %v", err)
+	}
+	if count, err := NewGraph().ImportDimacsLimit(strings.NewReader("p sp 3 0"), 3); err != nil || count != 0 {
+		t.Errorf("raised limit: %d, %v", count, err)
+	}
+	assertPanics(t, func() { NewGraph().ImportDimacsLimit(strings.NewReader(""), -1) })
 }
 
 func TestSerializeWritesAllVerticesAndEdges(t *testing.T) {

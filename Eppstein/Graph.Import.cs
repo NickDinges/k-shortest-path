@@ -63,9 +63,34 @@ public sealed partial class Graph
     /// the graph.
     /// </remarks>
     /// <exception cref="System.ArgumentNullException">Thrown when reader is null</exception>
-    /// <exception cref="System.FormatException">Thrown for an invalid line, the message names the line number</exception>
-    public int ImportDimacs(TextReader reader)
+    /// <exception cref="System.FormatException">Thrown for an invalid line, the message names the line number,
+    /// also if the file declares more than <see cref="DefaultMaxImportVertices"/> vertices</exception>
+    public int ImportDimacs(TextReader reader) => ImportDimacs(reader, DefaultMaxImportVertices);
+
+    /// <summary>
+    /// Default upper limit for the number of vertices a DIMACS file may declare (100 million; the
+    /// largest DIMACS road network, USA, has about 24 million).
+    /// </summary>
+    /// <remarks>
+    /// The problem line creates all declared vertices at once, so without a limit a few bytes of a
+    /// broken or hostile file could make the import allocate all memory.
+    /// </remarks>
+    public const int DefaultMaxImportVertices = 100_000_000;
+
+    /// <summary>
+    /// Like <see cref="ImportDimacs(TextReader)"/>, with an own limit for the number of vertices the
+    /// file may declare.
+    /// </summary>
+    /// <param name="reader">Source, e.g. a StreamReader for a .gr file</param>
+    /// <param name="maxVertices">Largest number of vertices accepted in the problem line.</param>
+    /// <returns>Number of edges added</returns>
+    /// <exception cref="System.ArgumentNullException">Thrown when reader is null</exception>
+    /// <exception cref="System.ArgumentOutOfRangeException">Thrown when maxVertices is negative</exception>
+    /// <exception cref="System.FormatException">Thrown for an invalid line or too many vertices, the
+    /// message names the line number</exception>
+    public int ImportDimacs(TextReader reader, int maxVertices)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxVertices);
         ArgumentNullException.ThrowIfNull(reader);
 
         int[]? index = null;  // vertex number -> vertex index
@@ -102,14 +127,18 @@ public sealed partial class Graph
             string[] fields = line.Split(separators, StringSplitOptions.RemoveEmptyEntries);
             if (fields[0] == "p")
             {
-                int vertices;
-                long edges;
                 if (index != null)
                     throw ImportError(lineNumber, "more than one problem line");
                 if (fields.Length != 4 || fields[1] != "sp" ||
-                    !int.TryParse(fields[2], NumberStyles.None, CultureInfo.InvariantCulture, out vertices) ||
-                    !long.TryParse(fields[3], NumberStyles.None, CultureInfo.InvariantCulture, out edges))
+                    !ulong.TryParse(fields[2], NumberStyles.None, CultureInfo.InvariantCulture, out ulong declared) ||
+                    !ulong.TryParse(fields[3], NumberStyles.None, CultureInfo.InvariantCulture, out _))
                     throw ImportError(lineNumber, "expected 'p sp VERTICES EDGES'");
+                long limit = Math.Min(maxVertices, Array.MaxLength - 1L);
+                if (declared > (ulong)limit)
+                    throw ImportError(lineNumber, declared.ToString(CultureInfo.InvariantCulture) +
+                        " vertices exceed the limit of " + limit.ToString(CultureInfo.InvariantCulture) +
+                        " (see the maxVertices parameter)");
+                int vertices = (int)declared;
 
                 index = new int[vertices + 1];
                 for (int i = 1; i <= vertices; i++)

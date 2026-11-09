@@ -1,0 +1,18 @@
+# Weekly pull requests for outdated dependencies and security fixes
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      test-packages:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /go
+    schedule:
+      interval: weekly

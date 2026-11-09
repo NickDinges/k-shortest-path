@@ -16,7 +16,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          # The library targets .NET 8 and .NET 10 (LTS); tests run on both
+          dotnet-version: |
+            8.0.x
+            10.0.x
       - name: Build (warnings are errors)
         run: dotnet build Eppstein.sln -c Release
       - name: Test
@@ -25,8 +28,13 @@ jobs:
         run: dotnet pack Eppstein/Eppstein.csproj -c Release --no-build -o artifacts
 
   go:
-    name: Go vet and tests
+    name: Go ${{ matrix.go }} vet and tests
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Minimum version from go.mod, and the two supported Go releases
+        go: ['1.23', oldstable, stable]
     defaults:
       run:
         working-directory: go
@@ -34,8 +42,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go/go.mod
+          go-version: ${{ matrix.go }}
       - name: Formatting
+        if: matrix.go == 'stable'
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then echo "Not gofmt-formatted: $unformatted"; exit 1; fi
@@ -58,10 +67,13 @@ jobs:
           path: base
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          # base and head may target different .NET versions
+          dotnet-version: |
+            8.0.x
+            10.0.x
       - uses: actions/setup-go@v5
         with:
-          go-version-file: head/go/go.mod
+          go-version: stable
       - name: Install benchstat
         run: go install golang.org/x/perf/cmd/benchstat@latest
       - name: Compare base and head

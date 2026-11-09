@@ -646,6 +646,14 @@ namespace Eppstein.Tests
             Assert.StartsWith("Line 2:", error("p sp 2 1\np sp 2 1"));       // Two problem lines
             Assert.StartsWith("Line 1:", error("p max 2 1"));                // Other problem type
             Assert.StartsWith("Line 1:", error("x 1 2"));                    // Unknown line type
+            // Absurd vertex counts: a few bytes must not overflow or allocate all memory
+            Assert.StartsWith("Line 1:", error("p sp 2147483647 1\na 1 2 3"));
+            Assert.StartsWith("Line 1:", error("p sp 400000000 1\na 1 2 3"));
+            Assert.StartsWith("Line 1:", error("p sp 18446744073709551616 1"));  // Beyond ulong
+            Assert.StartsWith("Line 1:", error("p sp -5 1"));
+            Assert.Contains("limit of 2", Assert.Throws<FormatException>(() => new Graph().ImportDimacs(new StringReader("p sp 3 0"), 2)).Message);
+            Assert.Equal(0, new Graph().ImportDimacs(new StringReader("p sp 3 0"), 3));  // Raised limit
+            Assert.Throws<ArgumentOutOfRangeException>(() => new Graph().ImportDimacs(new StringReader(""), -1));
             Assert.Throws<ArgumentNullException>(() => g.ImportDimacs(null));
         }
 

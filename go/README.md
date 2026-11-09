@@ -105,6 +105,7 @@ properties, so a few names differ:
 | `g.Vertices`, `g.Edges` | `g.Vertices()`, `g.Edges()` (iterators) |
 | `g.ImportEdges(reader)` → `int`, throws `FormatException` | `g.ImportEdges(r)` → `(int, error)` |
 | `g.ImportDimacs(reader)` → `int`, throws `FormatException` | `g.ImportDimacs(r)` → `(int, error)` |
+| `g.ImportDimacs(reader, maxVertices)`, `Graph.DefaultMaxImportVertices` | `g.ImportDimacsLimit(r, maxVertices)`, `eppstein.DefaultMaxImportVertices` |
 | `g.FindShortestPath(s, t)` → `GraphPath` | `g.FindShortestPath(s, t)` → `Path` |
 | `g.FindShortestPath(sIndex, tIndex)` | `g.FindShortestPathByIndex(sIndex, tIndex)` |
 | `g.FindNextShortestPath()` → `GraphPath` | `g.FindNextShortestPath()` → `Path` |
