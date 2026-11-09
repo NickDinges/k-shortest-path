@@ -40,6 +40,10 @@ namespace Eppstein
         /// </summary>
         public int Region = -1;
         /// <summary>
+        /// Position of the vertex in the graph (index used by AddEdge and FindShortestPath(int, int))
+        /// </summary>
+        internal int Index = -1;
+        /// <summary>
         /// Outgoing edges (subset of RelatedEdges), built by the graph before a query
         /// </summary>
         internal Edge[] OutEdges = NoEdges;
@@ -201,7 +205,8 @@ namespace Eppstein
     /// <summary>
     /// Contains a path composed by a edges collection
     /// </summary>
-    public class Path : List<Edge>
+    /// <remarks>Named GraphPath (formerly Path) so it does not clash with System.IO.Path</remarks>
+    public class GraphPath : List<Edge>
     {
         #region Properties
         /// <summary>

@@ -2,11 +2,12 @@ using System;
 using System.Diagnostics;
 using System.Text;
 using Eppstein;
-using Path = Eppstein.Path;
 
 /// <summary>
 /// Simple timing benchmark on grid graphs (run in Release mode):
-///   dotnet run -c Release --project Eppstein2.Benchmarks -- [size...] [--k N] [--local] [--ratio R]
+///   dotnet run -c Release --project Eppstein2.Benchmarks -- [size...] [--k N] [--local] [--ratio R] [--build strings|index|dimacs]
+/// --build chooses how the graph is built: CreateVertices/CreateEdges with labels (strings, default),
+/// AddVertex/AddEdge by index (index), or ImportDimacs from a DIMACS text in memory (dimacs).
 /// --ratio R limits paths to at most R times longer than the shortest one (MaxDetourRatio, corridor).
 /// --local searches between two nearby vertices in the middle of the grid (distance size/20
 /// in both directions) instead of corner to corner.
@@ -20,6 +21,7 @@ class Benchmark
         int k = 10000;
         bool local = false;
         double ratio = double.PositiveInfinity;
+        string build = "strings";
         var sizes = new System.Collections.Generic.List<int>();
         for (int i = 0; i < args.Length; i++)
         {
@@ -27,6 +29,8 @@ class Benchmark
                 k = int.Parse(args[++i]);
             else if (args[i] == "--local")
                 local = true;
+            else if (args[i] == "--build" && i + 1 < args.Length)
+                build = args[++i];
             else if (args[i] == "--ratio" && i + 1 < args.Length)
                 ratio = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
             else
@@ -36,52 +40,80 @@ class Benchmark
             sizes.AddRange(new[] { 50, 100, 200 });
 
         Console.WriteLine((local ? "Local query (nearby vertices in the middle of the grid)" : "Corner to corner") +
-            (double.IsPositiveInfinity(ratio) ? "" : ", MaxDetourRatio = " + ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            (double.IsPositiveInfinity(ratio) ? "" : ", MaxDetourRatio = " + ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)) +
+            ", build: " + build);
         Console.WriteLine("| grid | vertices | edges | build graph | first path | first path (repeated query) | next paths | paths found | weight of last path |");
         Console.WriteLine("|---|---|---|---|---|---|---|---|---|");
         foreach (int size in sizes)
-            Run(size, k, local, ratio);
+            Run(size, k, local, ratio, build);
     }
 
-    static void Run(int size, int k, bool local, double ratio)
+    static void Run(int size, int k, bool local, double ratio, string build)
     {
+        // Edge list (vertex index = y * size + x), prepared before timing
         Random rnd = new Random(1);
-        Func<int, int, string> name = (x, y) => "V" + x + "X" + y;
-
-        StringBuilder vertices = new StringBuilder();
-        for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-                vertices.Append(name(x, y)).Append(',');
-
-        Stopwatch watch = Stopwatch.StartNew();
-        Graph g = new Graph();
-        g.CreateVertices(vertices.ToString());
-        int edges = 0;
+        var edgeList = new System.Collections.Generic.List<(int Tail, int Head, int Weight)>();
         for (int y = 0; y < size; y++)
         {
             for (int x = 0; x < size; x++)
             {
-                if (x + 1 < size) { g.CreateEdges(name(x, y), name(x + 1, y), rnd.Next(1, 101), "g"); edges++; }
-                if (y + 1 < size) { g.CreateEdges(name(x, y), name(x, y + 1), rnd.Next(1, 101), "g"); edges++; }
-                if (x > 0 && (x + y * size) % 10 == 0) { g.CreateEdges(name(x, y), name(x - 1, y), rnd.Next(1, 101), "g"); edges++; }
+                int v = y * size + x;
+                if (x + 1 < size) edgeList.Add((v, v + 1, rnd.Next(1, 101)));
+                if (y + 1 < size) edgeList.Add((v, v + size, rnd.Next(1, 101)));
+                if (x > 0 && v % 10 == 0) edgeList.Add((v, v - 1, rnd.Next(1, 101)));
             }
         }
-        double build = watch.Elapsed.TotalMilliseconds;
+        int edges = edgeList.Count;
+        string[] labels = new string[size * size];
+        for (int v = 0; v < labels.Length; v++)
+            labels[v] = "V" + (v % size) + "X" + (v / size);
+        string vertexList = string.Join(",", labels);
+        string dimacs = null;
+        if (build == "dimacs")
+        {
+            StringBuilder text = new StringBuilder("p sp " + labels.Length + " " + edges + "\n");
+            foreach (var e in edgeList)
+                text.Append("a ").Append(e.Tail + 1).Append(' ').Append(e.Head + 1).Append(' ').Append(e.Weight).Append('\n');
+            dimacs = text.ToString();
+        }
+
+        Stopwatch watch = Stopwatch.StartNew();
+        Graph g = new Graph();
+        switch (build)
+        {
+            case "strings":  // Labels, parsed on every call
+                g.CreateVertices(vertexList);
+                foreach (var e in edgeList)
+                    g.CreateEdges(labels[e.Tail], labels[e.Head], e.Weight, "g");
+                break;
+            case "index":  // Vertex indices
+                foreach (string label in labels)
+                    g.AddVertex(label);
+                foreach (var e in edgeList)
+                    g.AddEdge(e.Tail, e.Head, e.Weight, "g");
+                break;
+            case "dimacs":  // Bulk import (vertex n gets index n - 1)
+                g.ImportDimacs(new System.IO.StringReader(dimacs));
+                break;
+            default:
+                throw new ArgumentException("unknown --build " + build);
+        }
+        double buildTime = watch.Elapsed.TotalMilliseconds;
 
         watch.Restart();
         g.MaxDetourRatio = ratio;
         int from = local ? size / 2 : 0;
         int to = local ? size / 2 + Math.Max(size / 20, 1) : size - 1;
-        Path p = g.FindShortestPath(name(from, from), name(to, to));
+        GraphPath p = g.FindShortestPath(from * size + from, to * size + to);
         double first = watch.Elapsed.TotalMilliseconds;
 
         // Same query again: without one-time work after a graph change (e.g. arc flags, edge arrays)
         watch.Restart();
-        p = g.FindShortestPath(name(from, from), name(to, to));
+        p = g.FindShortestPath(from * size + from, to * size + to);
         double repeated = watch.Elapsed.TotalMilliseconds;
 
         watch.Restart();
-        Path last = p;
+        GraphPath last = p;
         int found = p.IsValid ? 1 : 0;
         for (int i = 1; i < k && p.IsValid; i++)
         {
@@ -94,7 +126,7 @@ class Benchmark
         }
         double next = watch.Elapsed.TotalMilliseconds;
 
-        Console.WriteLine("| " + size + "x" + size + " | " + size * size + " | " + edges + " | " + build.ToString("F0") + " ms | " +
+        Console.WriteLine("| " + size + "x" + size + " | " + size * size + " | " + edges + " | " + buildTime.ToString("F0") + " ms | " +
             first.ToString("F0") + " ms | " + repeated.ToString("F0") + " ms | " + next.ToString("F0") + " ms | " + found + " | " + last.Weight + " |");
     }
 }

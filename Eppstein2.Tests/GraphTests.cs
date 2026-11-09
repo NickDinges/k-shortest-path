@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Eppstein;
 using Xunit;
@@ -33,10 +34,10 @@ namespace Eppstein2.Tests
             return g;
         }
 
-        private static List<Path> Take(Graph g, string s, string t, int k)
+        private static List<GraphPath> Take(Graph g, string s, string t, int k)
         {
-            List<Path> result = new List<Path>();
-            Path p = g.FindShortestPath(s, t);
+            List<GraphPath> result = new List<GraphPath>();
+            GraphPath p = g.FindShortestPath(s, t);
             while (p.IsValid && result.Count < k)
             {
                 result.Add(p);
@@ -80,7 +81,7 @@ namespace Eppstein2.Tests
             return seen.Contains(t);
         }
 
-        private static void AssertValidPath(Path p, string s, string t)
+        private static void AssertValidPath(GraphPath p, string s, string t)
         {
             Assert.True(p[0].Tail.Equals(s));
             Assert.True(p[p.Count - 1].Head.Equals(t));
@@ -99,7 +100,7 @@ namespace Eppstein2.Tests
                 "S,A,E,F,G,T:71", "S,A,B,F,T:71", "S,A,E,F,T:74", "S,A,B,C,C,G,T:74",
                 "S,A,B,C,C,C,G,T:90",
             };
-            List<Path> paths = Take(EppsteinExample(), "S", "T", expected.Length);
+            List<GraphPath> paths = Take(EppsteinExample(), "S", "T", expected.Length);
             // Order among equal weights is not specified: compare weights in order, paths as sets
             Assert.Equal(expected.Select(x => long.Parse(x.Split(':')[1])), paths.Select(p => p.Weight));
             Assert.Equal(new HashSet<string>(expected), new HashSet<string>(paths.Select(p => p.VertexNames + ":" + p.Weight)));
@@ -111,7 +112,7 @@ namespace Eppstein2.Tests
             Graph g = new Graph();
             g.CreateVertices("S,A,B,T");
             g.CreateEdges("S,A,B,A", "A,B,A,T", 1, "g");  // A <-> B cycle used to recurse forever
-            List<Path> paths = Take(g, "S", "T", 5);
+            List<GraphPath> paths = Take(g, "S", "T", 5);
             Assert.Equal(new long[] { 2, 4, 6, 8, 10 }, paths.Select(p => p.Weight));
             Assert.Equal("S,A,B,A,T", paths[1].VertexNames);
         }
@@ -155,8 +156,8 @@ namespace Eppstein2.Tests
                     continue;  // Empty path is reported as invalid
 
                 List<int> expected = BruteForceWalkWeights(n, edges, s, t, maxWeight);
-                List<Path> paths = Take(g, labels[s], labels[t], expected.Count + 1);
-                foreach (Path p in paths)
+                List<GraphPath> paths = Take(g, labels[s], labels[t], expected.Count + 1);
+                foreach (GraphPath p in paths)
                     AssertValidPath(p, labels[s], labels[t]);
 
                 List<long> actual = paths.Select(p => p.Weight).TakeWhile(w => w <= maxWeight).ToList();
@@ -167,7 +168,7 @@ namespace Eppstein2.Tests
         [Fact]
         public void ArcFlags_GiveSameResults_AndFollowWeightChanges()
         {
-            List<Path> plain = Take(EppsteinExample(), "S", "T", 30);
+            List<GraphPath> plain = Take(EppsteinExample(), "S", "T", 30);
             Graph g = EppsteinExample();
             Assert.True(g.EnableArcFlags("S,A,B,C;D,E,F;G,H,I,J,K,T"));
             Assert.True(g.PrecomputeArcFlags());
@@ -200,7 +201,7 @@ namespace Eppstein2.Tests
             g.CreateVertices("S,A,B,T");
             g.CreateEdges("S,A", "A,T", big, "far");
             g.CreateEdges("S,B", "B,T", big + 1, "far2");
-            List<Path> paths = Take(g, "S", "T", 3);
+            List<GraphPath> paths = Take(g, "S", "T", 3);
             Assert.Equal(new[] { 2 * big, 2 * big + 2 }, paths.Select(p => p.Weight));
             Assert.Contains("label=\"3000000000\"", g.Serialize());
 
@@ -250,14 +251,14 @@ namespace Eppstein2.Tests
             Graph g = EppsteinExample();
             g.FindShortestPath("S", "T");
             Edge first = g.FindShortestPath("S", "T")[0];
-            Path root = new Path();
+            GraphPath root = new GraphPath();
             root.Add(first);
             ST_Node rootNode = new ST_Node(root);
             ST_Node child = new ST_Node(new ST_Node(rootNode, first), first);
             Assert.Equal(new[] { first, first, first }, child.Sidetracks);
             Assert.Equal(3 * first.Delta, child.Weight);
             Assert.Same(first.Head, child.LastHead);
-            Assert.Null(new ST_Node(new Path()).LastHead);
+            Assert.Null(new ST_Node(new GraphPath()).LastHead);
         }
 
         [Theory]
@@ -313,9 +314,9 @@ namespace Eppstein2.Tests
                     continue;  // Brute force would miss paths
 
                 List<long> expected = all.Where(w => w <= limit).Select(w => (long)w).ToList();
-                List<Path> paths = Take(g, labels[s], labels[t], expected.Count + 5);
+                List<GraphPath> paths = Take(g, labels[s], labels[t], expected.Count + 5);
                 Assert.Equal(expected, paths.Select(p => p.Weight));  // Then an empty path
-                foreach (Path p in paths)
+                foreach (GraphPath p in paths)
                     AssertValidPath(p, labels[s], labels[t]);
                 checkedGraphs++;
             }
@@ -374,11 +375,141 @@ namespace Eppstein2.Tests
                     if (x + 1 < size) g.CreateEdges(names[y * size + x], names[y * size + x + 1], rnd.Next(1, 100), "g");
                     if (y + 1 < size) g.CreateEdges(names[y * size + x], names[(y + 1) * size + x], rnd.Next(1, 100), "g");
                 }
-            List<Path> paths = Take(g, names[0], names[size * size - 1], 2000);
+            List<GraphPath> paths = Take(g, names[0], names[size * size - 1], 2000);
             Assert.Equal(2000, paths.Count);
             Assert.True(g.CandidatesCreated <= 3 * paths.Count + 1, "candidates: " + g.CandidatesCreated);
             for (int i = 1; i < paths.Count; i++)
                 Assert.True(paths[i - 1].Weight <= paths[i].Weight);
+        }
+
+        [Fact]
+        public void AddVertex_ReturnsIndices_AndMixesWithCreateVertices()
+        {
+            Graph g = new Graph();
+            g.CreateVertices("A,B");
+            Assert.Equal(2, g.VertexCount);
+            Assert.Equal(0, g.GetVertexIndex("a"));
+            Assert.Equal(1, g.GetVertexIndex("B"));
+            Assert.Equal(2, g.AddVertex("Home"));
+            Assert.Equal(2, g.AddVertex("HOME"));   // Existing label (case-insensitive)
+            Assert.Equal(-1, g.AddVertex("1A"));    // Invalid labels
+            Assert.Equal(-1, g.AddVertex("A-B"));
+            Assert.Equal(-1, g.AddVertex(""));
+            Assert.Equal(-1, g.AddVertex(null));
+            Assert.Equal(-1, g.GetVertexIndex("X"));
+            Assert.Equal(-1, g.GetVertexIndex(null));
+            Assert.Equal(3, g.VertexCount);
+
+            Assert.True(g.AddEdge(0, 2, 4));
+            Assert.True(g.AddEdge(0, 1, 1, "fast"));
+            Assert.True(g.AddEdge(1, 2, 1, null));
+            Assert.False(g.AddEdge(0, 3, 1));
+            Assert.False(g.AddEdge(-1, 0, 1));
+            Assert.True(g.CreateEdges("HOME", "a", 2, "x"));  // String and index methods mix
+
+            Assert.Equal("A,B,HOME", g.FindShortestPath(0, 2).VertexNames);
+            Assert.Equal(new long[] { 2, 4 }, Take(g, "A", "HOME", 5).Take(2).Select(p => p.Weight));
+            Assert.False(g.FindShortestPath(0, 3).IsValid);
+            Assert.False(g.FindShortestPath(-1, 0).IsValid);
+
+            g.EdgeGroupWeights("FAST", 10);  // Group given to AddEdge, upper case
+            Assert.Equal("A,HOME", g.FindShortestPath("A", "HOME").VertexNames);
+        }
+
+        [Fact]
+        public void BuildingByIndexAndImports_GiveSameResultsAsCreateEdges()
+        {
+            Random rnd = new Random(5);
+            for (int it = 0; it < 100; it++)
+            {
+                int n = rnd.Next(2, 9);
+                List<Tuple<int, int, int>> edges = new List<Tuple<int, int, int>>();
+                for (int i = 0; i < n; i++)
+                    for (int j = 0; j < n; j++)
+                        if (rnd.NextDouble() < 0.3)
+                            edges.Add(Tuple.Create(i, j, rnd.Next(1, 10)));
+                // DIMACS numbers vertices from 1 and labels them V1..Vn
+                string[] labels = Enumerable.Range(1, n).Select(i => "V" + i).ToArray();
+
+                Graph byLabels = new Graph();
+                byLabels.CreateVertices(string.Join(",", labels));
+                foreach (var e in edges)
+                    byLabels.CreateEdges(labels[e.Item1], labels[e.Item2], e.Item3, "g");
+
+                Graph byIndex = new Graph();
+                foreach (string label in labels)
+                    byIndex.AddVertex(label);
+                foreach (var e in edges)
+                    byIndex.AddEdge(e.Item1, e.Item2, e.Item3, "g");
+
+                Graph csv = new Graph();
+                csv.CreateVertices(string.Join(",", labels));  // Keeps isolated vertices
+                Assert.Equal(edges.Count, csv.ImportEdges(new StringReader(
+                    string.Join("\n", edges.Select(e => labels[e.Item1] + "," + labels[e.Item2] + "," + e.Item3 + ",g")))));
+
+                Graph dimacs = new Graph();
+                Assert.Equal(edges.Count, dimacs.ImportDimacs(new StringReader(
+                    "c random graph\np sp " + n + " " + edges.Count + "\n" +
+                    string.Join("\n", edges.Select(e => "a " + (e.Item1 + 1) + " " + (e.Item2 + 1) + " " + e.Item3)))));
+
+                int s = rnd.Next(n), t = rnd.Next(n);
+                List<long> expected = Take(byLabels, labels[s], labels[t], 30).Select(p => p.Weight).ToList();
+                foreach (Graph g in new[] { byIndex, csv, dimacs })
+                {
+                    Assert.Equal(n, g.VertexCount);
+                    Assert.Equal(expected, Take(g, labels[s], labels[t], 30).Select(p => p.Weight));
+                }
+            }
+        }
+
+        [Fact]
+        public void ImportEdges_ReadsCsv_AndReportsErrorsWithLineNumber()
+        {
+            Graph g = new Graph();
+            int count = g.ImportEdges(new StringReader(
+                "# tail,head,weight,group\n" +
+                "home, park, 2\n" +
+                "\n" +
+                "  PARK ,office,7,Train  \n" +
+                "HOME,OFFICE,10\n"));
+            Assert.Equal(3, count);
+            Assert.Equal(3, g.VertexCount);
+            Assert.Equal("HOME,PARK,OFFICE", g.FindShortestPath("HOME", "OFFICE").VertexNames);
+            g.EdgeGroupWeights("train", 100);
+            Assert.Equal("HOME,OFFICE", g.FindShortestPath("HOME", "OFFICE").VertexNames);
+
+            FormatException error = Assert.Throws<FormatException>(() => g.ImportEdges(new StringReader("A,B,1\nA,B\n")));
+            Assert.StartsWith("Line 2:", error.Message);
+            Assert.Equal(1, g.FindShortestPath("A", "B").Weight);  // Line 1 was imported
+            Assert.StartsWith("Line 1:", Assert.Throws<FormatException>(() => g.ImportEdges(new StringReader("A,1B,1"))).Message);
+            Assert.StartsWith("Line 1:", Assert.Throws<FormatException>(() => g.ImportEdges(new StringReader("A,B,x"))).Message);
+            Assert.StartsWith("Line 1:", Assert.Throws<FormatException>(() => g.ImportEdges(new StringReader("A,B,1,g,h"))).Message);
+            Assert.Throws<ArgumentNullException>(() => g.ImportEdges(null));
+        }
+
+        [Fact]
+        public void ImportDimacs_ReadsGraph_AndReportsErrorsWithLineNumber()
+        {
+            Graph g = new Graph();
+            int count = g.ImportDimacs(new StringReader(
+                "c 9th DIMACS challenge format\n" +
+                "p sp 3 3\n" +
+                "a 1 2 5\n" +
+                "a\t2  3 5\n" +
+                "a 1 3 20\n"));
+            Assert.Equal(3, count);
+            Assert.Equal(new long[] { 10, 20 }, Take(g, "V1", "V3", 5).Select(p => p.Weight));
+            Assert.Equal(0, g.GetVertexIndex("V1"));
+
+            Func<string, string> error = text => Assert.Throws<FormatException>(() => new Graph().ImportDimacs(new StringReader(text))).Message;
+            Assert.StartsWith("Line 1:", error("a 1 2 3"));                  // Edge before problem line
+            Assert.StartsWith("Line 2:", error("p sp 2 1\na 1 3 1"));        // Vertex out of range
+            Assert.StartsWith("Line 2:", error("p sp 2 1\na 1 2"));          // Missing weight
+            Assert.StartsWith("Line 2:", error("p sp 2 1\na 1 2 3 4"));      // Too many values
+            Assert.StartsWith("Line 2:", error("p sp 2 1\np sp 2 1"));       // Two problem lines
+            Assert.StartsWith("Line 1:", error("p max 2 1"));                // Other problem type
+            Assert.StartsWith("Line 1:", error("x 1 2"));                    // Unknown line type
+            Assert.Throws<ArgumentNullException>(() => g.ImportDimacs(null));
         }
 
         [Fact]
@@ -399,7 +530,7 @@ namespace Eppstein2.Tests
         public void Serialize_HighlightsPathsAndQueryState()
         {
             Graph g = EppsteinExample();
-            List<Path> paths = Take(g, "S", "T", 2);
+            List<GraphPath> paths = Take(g, "S", "T", 2);
             string dot = g.Serialize(paths);
             Assert.Contains("\"S\" [label=\"S\\n55\", shape=doublecircle", dot);
             Assert.Contains("\"S\" -> \"D\" [label=\"13\", tooltip=\"group ALPHA\", color=\"red\"", dot);

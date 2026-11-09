@@ -508,6 +508,163 @@ func TestPathEnumerationCreatesAtMostThreeCandidatesPerPath(t *testing.T) {
 	}
 }
 
+func TestAddVertexReturnsIndicesAndMixesWithCreateVertices(t *testing.T) {
+	g := NewGraph()
+	g.CreateVertices("A,B")
+	check := func(got, want int, what string) {
+		t.Helper()
+		if got != want {
+			t.Fatalf("%s = %d, want %d", what, got, want)
+		}
+	}
+	check(g.VertexCount(), 2, "VertexCount")
+	check(g.VertexIndex("a"), 0, "VertexIndex(a)")
+	check(g.VertexIndex("B"), 1, "VertexIndex(B)")
+	check(g.AddVertex("Home"), 2, "AddVertex(Home)")
+	check(g.AddVertex("HOME"), 2, "AddVertex(HOME)") // existing label, case-insensitive
+	for _, invalid := range []string{"1A", "A-B", ""} {
+		check(g.AddVertex(invalid), -1, "AddVertex("+invalid+")")
+	}
+	check(g.VertexIndex("X"), -1, "VertexIndex(X)")
+	check(g.VertexCount(), 3, "VertexCount")
+
+	if !g.AddEdge(0, 2, 4) || !g.AddEdgeGroup(0, 1, 1, "fast") || !g.AddEdge(1, 2, 1) {
+		t.Fatal("valid edge rejected")
+	}
+	if g.AddEdge(0, 3, 1) || g.AddEdge(-1, 0, 1) {
+		t.Fatal("invalid index accepted")
+	}
+	if !g.CreateEdges("HOME", "a", 2, "x") { // string and index methods mix
+		t.Fatal("CreateEdges failed")
+	}
+	if p := g.FindShortestPathByIndex(0, 2); p.VertexNames() != "A,B,HOME" {
+		t.Fatalf("path = %s", p.VertexNames())
+	}
+	if g.FindShortestPathByIndex(0, 3).IsValid() || g.FindShortestPathByIndex(-1, 0).IsValid() {
+		t.Fatal("path for invalid index")
+	}
+	g.EdgeGroupWeights("FAST", 10) // group given to AddEdgeGroup, upper case
+	if p := g.FindShortestPath("A", "HOME"); p.VertexNames() != "A,HOME" {
+		t.Fatalf("path after group change = %s", p.VertexNames())
+	}
+}
+
+func TestBuildingByIndexAndImportsGiveSameResultsAsCreateEdges(t *testing.T) {
+	rnd := rand.New(rand.NewSource(5))
+	for it := 0; it < 100; it++ {
+		n := 2 + rnd.Intn(7)
+		var edges []testEdge
+		for i := 0; i < n; i++ {
+			for j := 0; j < n; j++ {
+				if rnd.Float64() < 0.3 {
+					edges = append(edges, testEdge{i, j, int64(1 + rnd.Intn(9))})
+				}
+			}
+		}
+		labels := make([]string, n) // DIMACS numbers vertices from 1 and labels them V1..Vn
+		for i := range labels {
+			labels[i] = fmt.Sprintf("V%d", i+1)
+		}
+
+		byLabels := NewGraph()
+		byLabels.CreateVertices(strings.Join(labels, ","))
+		byIndex := NewGraph()
+		for _, l := range labels {
+			byIndex.AddVertex(l)
+		}
+		var csv, dimacs strings.Builder
+		fmt.Fprintf(&dimacs, "c random graph\np sp %d %d\n", n, len(edges))
+		for _, e := range edges {
+			byLabels.CreateEdges(labels[e.from], labels[e.to], e.weight, "g")
+			byIndex.AddEdgeGroup(e.from, e.to, e.weight, "g")
+			fmt.Fprintf(&csv, "%s,%s,%d,g\n", labels[e.from], labels[e.to], e.weight)
+			fmt.Fprintf(&dimacs, "a %d %d %d\n", e.from+1, e.to+1, e.weight)
+		}
+		fromCsv := NewGraph()
+		fromCsv.CreateVertices(strings.Join(labels, ",")) // keeps isolated vertices
+		if count, err := fromCsv.ImportEdges(strings.NewReader(csv.String())); err != nil || count != len(edges) {
+			t.Fatalf("ImportEdges = %d, %v", count, err)
+		}
+		fromDimacs := NewGraph()
+		if count, err := fromDimacs.ImportDimacs(strings.NewReader(dimacs.String())); err != nil || count != len(edges) {
+			t.Fatalf("ImportDimacs = %d, %v", count, err)
+		}
+
+		s, target := rnd.Intn(n), rnd.Intn(n)
+		expected := weights(take(byLabels, labels[s], labels[target], 30))
+		for _, g := range []*Graph{byIndex, fromCsv, fromDimacs} {
+			if g.VertexCount() != n {
+				t.Fatalf("VertexCount = %d, want %d", g.VertexCount(), n)
+			}
+			if got := weights(take(g, labels[s], labels[target], 30)); !equalInts(got, expected) {
+				t.Fatalf("it=%d: weights %v, want %v", it, got, expected)
+			}
+		}
+	}
+}
+
+func TestImportEdgesReadsCsvAndReportsErrorsWithLineNumber(t *testing.T) {
+	g := NewGraph()
+	count, err := g.ImportEdges(strings.NewReader(
+		"# tail,head,weight,group\nhome, park, 2\n\n  PARK ,office,7,Train  \nHOME,OFFICE,10\n"))
+	if err != nil || count != 3 || g.VertexCount() != 3 {
+		t.Fatalf("ImportEdges = %d, %v, vertices %d", count, err, g.VertexCount())
+	}
+	if p := g.FindShortestPath("HOME", "OFFICE"); p.VertexNames() != "HOME,PARK,OFFICE" {
+		t.Fatalf("path = %s", p.VertexNames())
+	}
+	g.EdgeGroupWeights("train", 100)
+	if p := g.FindShortestPath("HOME", "OFFICE"); p.VertexNames() != "HOME,OFFICE" {
+		t.Fatalf("path after group change = %s", p.VertexNames())
+	}
+
+	if _, err := g.ImportEdges(strings.NewReader("A,B,1\nA,B\n")); err == nil || !strings.HasPrefix(err.Error(), "line 2:") {
+		t.Fatalf("error = %v", err)
+	}
+	if w := g.FindShortestPath("A", "B").Weight(); w != 1 {
+		t.Fatalf("line 1 not imported, weight %d", w)
+	}
+	for _, text := range []string{"A,1B,1", "A,B,x", "A,B,1,g,h"} {
+		if _, err := g.ImportEdges(strings.NewReader(text)); err == nil || !strings.HasPrefix(err.Error(), "line 1:") {
+			t.Errorf("%q: error = %v", text, err)
+		}
+	}
+	if _, err := g.ImportEdges(nil); err == nil {
+		t.Error("nil reader accepted")
+	}
+}
+
+func TestImportDimacsReadsGraphAndReportsErrorsWithLineNumber(t *testing.T) {
+	g := NewGraph()
+	count, err := g.ImportDimacs(strings.NewReader(
+		"c 9th DIMACS challenge format\np sp 3 3\na 1 2 5\na\t2  3 5\na 1 3 20\n"))
+	if err != nil || count != 3 {
+		t.Fatalf("ImportDimacs = %d, %v", count, err)
+	}
+	if w := weights(take(g, "V1", "V3", 5)); !equalInts(w, []int64{10, 20}) {
+		t.Fatalf("weights = %v", w)
+	}
+	if g.VertexIndex("V1") != 0 {
+		t.Fatal("V1 is not vertex 0")
+	}
+	for text, line := range map[string]string{
+		"a 1 2 3":             "line 1:", // edge before problem line
+		"p sp 2 1\na 1 3 1":   "line 2:", // vertex out of range
+		"p sp 2 1\na 1 2":     "line 2:", // missing weight
+		"p sp 2 1\na 1 2 3 4": "line 2:", // too many values
+		"p sp 2 1\np sp 2 1":  "line 2:", // two problem lines
+		"p max 2 1":           "line 1:", // other problem type
+		"x 1 2":               "line 1:", // unknown line type
+	} {
+		if _, err := NewGraph().ImportDimacs(strings.NewReader(text)); err == nil || !strings.HasPrefix(err.Error(), line) {
+			t.Errorf("%q: error = %v, want %s", text, err, line)
+		}
+	}
+	if _, err := g.ImportDimacs(nil); err == nil {
+		t.Error("nil reader accepted")
+	}
+}
+
 func TestSerializeWritesAllVerticesAndEdges(t *testing.T) {
 	dot := eppsteinExample().Serialize()
 	if !strings.HasPrefix(dot, "digraph Eppstein {") || !strings.HasSuffix(strings.TrimSpace(dot), "}") {

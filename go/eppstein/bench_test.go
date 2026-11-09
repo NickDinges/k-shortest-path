@@ -39,15 +39,68 @@ func gridGraph(size int) *Graph {
 
 func benchSizes() []int { return []int{50, 100, 200} }
 
-// BenchmarkBuildGraph measures CreateVertices and CreateEdges.
+// BenchmarkBuildGraph measures building a grid graph in three ways: CreateVertices and
+// CreateEdges with labels, AddVertex and AddEdge by index, and ImportDimacs.
 func BenchmarkBuildGraph(b *testing.B) {
-	for _, size := range benchSizes() {
-		b.Run(fmt.Sprintf("grid%d", size), func(b *testing.B) {
+	for _, size := range []int{200, 1000} {
+		labels, edges := gridEdges(size)
+		b.Run(fmt.Sprintf("grid%d_strings", size), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				gridGraph(size)
+				g := NewGraph()
+				g.CreateVertices(strings.Join(labels, ","))
+				for _, e := range edges {
+					g.CreateEdges(labels[e.from], labels[e.to], e.weight, "g")
+				}
+			}
+		})
+		b.Run(fmt.Sprintf("grid%d_index", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				g := NewGraph()
+				for _, l := range labels {
+					g.AddVertex(l)
+				}
+				for _, e := range edges {
+					g.AddEdgeGroup(e.from, e.to, e.weight, "g")
+				}
+			}
+		})
+		var dimacs strings.Builder
+		fmt.Fprintf(&dimacs, "p sp %d %d\n", len(labels), len(edges))
+		for _, e := range edges {
+			fmt.Fprintf(&dimacs, "a %d %d %d\n", e.from+1, e.to+1, e.weight)
+		}
+		text := dimacs.String()
+		b.Run(fmt.Sprintf("grid%d_dimacs", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				if _, err := NewGraph().ImportDimacs(strings.NewReader(text)); err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}
+}
+
+// gridEdges returns the labels and edges (by vertex index y*size+x) of the benchmark grid.
+func gridEdges(size int) ([]string, []testEdge) {
+	rnd := rand.New(rand.NewSource(1))
+	labels := make([]string, size*size)
+	var edges []testEdge
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			v := y*size + x
+			labels[v] = fmt.Sprintf("V%dX%d", x, y)
+			if x+1 < size {
+				edges = append(edges, testEdge{v, v + 1, int64(1 + rnd.Intn(100))})
+			}
+			if y+1 < size {
+				edges = append(edges, testEdge{v, v + size, int64(1 + rnd.Intn(100))})
+			}
+			if x > 0 && v%10 == 0 {
+				edges = append(edges, testEdge{v, v - 1, int64(1 + rnd.Intn(100))})
+			}
+		}
+	}
+	return labels, edges
 }
 
 // BenchmarkKShortestPaths measures FindShortestPath plus 10000 FindNextShortestPath calls
