@@ -129,6 +129,9 @@ func FuzzKShortestPaths(f *testing.F) {
 		if options&8 != 0 { // corridor
 			g.SetMaxDetour(int64(options/16) % 10)
 		}
+		if options&2 != 0 && options&1 == 0 {
+			g.EnableContractionHierarchy()
+		}
 		simple := options&4 != 0 // only simple paths (Yen)
 		g.SetSimplePathsOnly(simple)
 

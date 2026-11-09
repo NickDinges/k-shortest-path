@@ -101,10 +101,11 @@ namespace Eppstein.Tests
             public List<(int Tail, int Head, int Weight)> Edges = new();
             public int Start, Goal;
             public int ArcFlagRegions;  // 0: no arc flags
+            public bool ContractionHierarchy;
             public long? MaxDetour;
 
             public override string ToString() =>
-                $"n={VertexCount} s={Start} t={Goal} arcFlags={ArcFlagRegions} maxDetour={MaxDetour} edges=" +
+                $"n={VertexCount} s={Start} t={Goal} arcFlags={ArcFlagRegions} ch={ContractionHierarchy} maxDetour={MaxDetour} edges=" +
                 string.Join(" ", Edges.Select(e => $"{e.Tail}->{e.Head}:{e.Weight}"));
         }
 
@@ -120,11 +121,12 @@ namespace Eppstein.Tests
                 from t in Gen.Choose(0, n - 1)
                 from regions in Gen.Choose(0, 3)
                 from detour in Gen.OneOf(Gen.Constant<long?>(null), Gen.Choose(0, 12).Select(d => (long?)d))
+                from ch in Arb.Generate<bool>()
                 where s != t
                 select new SmallGraph
                 {
                     VertexCount = n, Edges = edges.ToList(), Start = s, Goal = t,
-                    ArcFlagRegions = regions, MaxDetour = detour,
+                    ArcFlagRegions = regions, MaxDetour = detour, ContractionHierarchy = ch,
                 };
             return Arb.From(gen);
         }
@@ -145,6 +147,8 @@ namespace Eppstein.Tests
                     g.AddEdge(e.Tail, e.Head, e.Weight);
                 if (sg.ArcFlagRegions > 0)
                     g.EnableArcFlags(sg.ArcFlagRegions);
+                if (sg.ContractionHierarchy)
+                    g.EnableContractionHierarchy();
                 if (sg.MaxDetour.HasValue)
                 {
                     g.MaxDetour = sg.MaxDetour.Value;
@@ -200,6 +204,8 @@ namespace Eppstein.Tests
                 g.SimplePathsOnly = true;
                 if (sg.ArcFlagRegions > 0)
                     g.EnableArcFlags(sg.ArcFlagRegions);
+                if (sg.ContractionHierarchy)
+                    g.EnableContractionHierarchy();
                 if (sg.MaxDetour.HasValue)
                 {
                     g.MaxDetour = sg.MaxDetour.Value;

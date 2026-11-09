@@ -155,3 +155,27 @@ func kPaths(g *Graph, s, t string, k int) {
 		p = g.FindNextShortestPath()
 	}
 }
+
+// BenchmarkShortestPathTree measures the first path of a corner-to-corner query (the whole
+// shortest-path tree) on a 200x200 grid with Dijkstra and with PHAST on the contraction hierarchy
+// (preprocessing not included).
+func BenchmarkShortestPathTree(b *testing.B) {
+	const size = 200
+	target := fmt.Sprintf("V%dX%d", size-1, size-1)
+	for _, ch := range []bool{false, true} {
+		g := gridGraph(size)
+		name := "grid200_dijkstra"
+		if ch {
+			g.EnableContractionHierarchy()
+			g.PrecomputeContractionHierarchy()
+			name = "grid200_phast"
+		}
+		b.Run(name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				if !g.FindShortestPath("V0X0", target).IsValid() {
+					b.Fatal("no path")
+				}
+			}
+		})
+	}
+}

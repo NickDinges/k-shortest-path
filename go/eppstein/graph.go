@@ -51,6 +51,7 @@ type Graph struct {
 	queryState             // current query (paths.go)
 	arcFlagsState          // arc flags (arcflags.go)
 	simpleState            // simple paths (simplepaths.go)
+	chState                // contraction hierarchy (ch.go)
 }
 
 // NewGraph creates an empty graph. The zero value Graph{} is usable as well.
@@ -258,6 +259,7 @@ func (g *Graph) changed(structure bool) {
 		g.adjacencyValid = false
 	}
 	g.arcFlagsValid = false
+	g.chValid = false
 }
 
 func (g *Graph) groupID(group string) int32 {

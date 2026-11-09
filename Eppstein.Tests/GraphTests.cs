@@ -128,9 +128,10 @@ namespace Eppstein.Tests
         }
 
         [Theory]
-        [InlineData(false)]
-        [InlineData(true)]
-        public void RandomCyclicGraphs_MatchBruteForce(bool arcFlags)
+        [InlineData(false, false)]
+        [InlineData(true, false)]
+        [InlineData(false, true)]
+        public void RandomCyclicGraphs_MatchBruteForce(bool arcFlags, bool contractionHierarchy)
         {
             Random rnd = new Random(42);
             const int maxWeight = 25;
@@ -150,6 +151,8 @@ namespace Eppstein.Tests
                     g.CreateEdges(labels[e.Item1], labels[e.Item2], e.Item3, "g");
                 if (arcFlags)
                     Assert.True(g.EnableArcFlags(rnd.Next(1, 4)));
+                if (contractionHierarchy)
+                    g.EnableContractionHierarchy();
 
                 int s = rnd.Next(n), t = rnd.Next(n);
                 if (s == t)
@@ -179,6 +182,118 @@ namespace Eppstein.Tests
             h.EdgeGroupWeights("beta", 1);
             g.EdgeGroupWeights("beta", 1);  // Flags must be recomputed
             Assert.Equal(Take(h, "S", "T", 30).Select(p => p.Weight), Take(g, "S", "T", 30).Select(p => p.Weight));
+        }
+
+        /// <summary>
+        /// Random graphs (zero, negative and parallel edges, self-loops, unreachable vertices): PHAST on
+        /// the contraction hierarchy gives every vertex the same distance as Dijkstra, a consistent
+        /// tree, and the same path weights.
+        /// </summary>
+        [Fact]
+        public void ContractionHierarchy_MatchesDijkstra()
+        {
+            Random rnd = new Random(7);
+            for (int it = 0; it < 150; it++)
+            {
+                int n = rnd.Next(1, 120);
+                int m = rnd.Next(0, 4 * n);
+                Graph plain = new Graph(), ch = new Graph();
+                for (int v = 0; v < n; v++)
+                {
+                    plain.AddVertex("V" + v);
+                    ch.AddVertex("V" + v);
+                }
+                for (int i = 0; i < m; i++)
+                {
+                    int a = rnd.Next(n), b = rnd.Next(n);
+                    int kind = rnd.Next(10);
+                    long w = kind == 0 ? 0 : kind == 1 ? -1 : rnd.Next(1, 20);
+                    plain.AddEdge(a, b, w);
+                    ch.AddEdge(a, b, w);
+                }
+                ch.EnableContractionHierarchy();
+                Assert.True(ch.PrecomputeContractionHierarchy());
+
+                for (int q = 0; q < 5; q++)
+                {
+                    int s = rnd.Next(n), t = rnd.Next(n);
+                    List<long> expected = plain.EnumeratePaths(s, t).Take(20).Select(p => p.Weight).ToList();
+                    List<long> actual = ch.EnumeratePaths(s, t).Take(20).Select(p => p.Weight).ToList();
+                    Assert.Equal(expected, actual);
+                    Assert.Equal(plain.Vertices.Select(v => v.Distance), ch.Vertices.Select(v => v.Distance));
+                    foreach (Vertex v in ch.Vertices)
+                    {
+                        Edge? tree = v.TreeEdge;
+                        if (tree.HasValue)
+                            Assert.Equal(v.Distance, tree.Value.Weight + tree.Value.Head.Distance);
+                    }
+                }
+            }
+        }
+
+        [Fact]
+        public void ContractionHierarchy_FollowsChanges_AndCorridorUsesDijkstra()
+        {
+            Graph g = EppsteinExample();
+            Assert.False(g.ContractionHierarchyEnabled);
+            Assert.False(g.PrecomputeContractionHierarchy());
+            g.EnableContractionHierarchy();
+            Assert.True(g.ContractionHierarchyEnabled);
+            Assert.Equal(0, g.ContractionHierarchyShortcuts);  // Not computed yet
+            List<long> plain = Take(EppsteinExample(), "S", "T", 30).Select(p => p.Weight).ToList();
+            Assert.Equal(plain, Take(g, "S", "T", 30).Select(p => p.Weight));
+            Assert.True(g.ContractionHierarchyShortcuts >= 0);
+
+            Graph h = EppsteinExample();
+            h.EdgeGroupWeights("beta", 1);
+            g.EdgeGroupWeights("beta", 1);  // Hierarchy must be recomputed
+            Assert.Equal(Take(h, "S", "T", 30).Select(p => p.Weight), Take(g, "S", "T", 30).Select(p => p.Weight));
+            h.AddVertex("X");
+            g.AddVertex("X");
+            h.AddEdge(h.GetVertexIndex("S"), h.GetVertexIndex("X"), 1);
+            g.AddEdge(g.GetVertexIndex("S"), g.GetVertexIndex("X"), 1);
+            Assert.Equal(Take(h, "S", "X", 5).Select(p => p.Weight), Take(g, "S", "X", 5).Select(p => p.Weight));
+
+            h.MaxDetourRatio = 0.5;
+            g.MaxDetourRatio = 0.5;  // Corridor: Dijkstra, same results
+            Assert.Equal(Take(h, "S", "T", 30).Select(p => p.Weight), Take(g, "S", "T", 30).Select(p => p.Weight));
+
+            g.SimplePathsOnly = true;
+            g.MaxDetourRatio = double.PositiveInfinity;
+            h.SimplePathsOnly = true;
+            h.MaxDetourRatio = double.PositiveInfinity;
+            Assert.Equal(Take(h, "S", "T", 30).Select(p => p.Weight), Take(g, "S", "T", 30).Select(p => p.Weight));
+
+            g.DisableContractionHierarchy();
+            Assert.False(g.ContractionHierarchyEnabled);
+            Assert.Equal(0, g.ContractionHierarchyShortcuts);
+            Assert.Equal(Take(h, "S", "T", 30).Select(p => p.Weight), Take(g, "S", "T", 30).Select(p => p.Weight));
+        }
+
+        [Fact]
+        public void ContractionHierarchy_GridNeedsShortcuts()
+        {
+            const int size = 12;
+            Graph Grid()
+            {
+                Graph grid = new Graph();
+                for (int i = 0; i < size * size; i++)
+                    grid.AddVertex("V" + i);
+                Random rnd = new Random(3);
+                for (int r = 0; r < size; r++)
+                    for (int c = 0; c < size; c++)
+                    {
+                        int v = r * size + c;
+                        if (c + 1 < size) { grid.AddEdge(v, v + 1, rnd.Next(1, 10)); grid.AddEdge(v + 1, v, rnd.Next(1, 10)); }
+                        if (r + 1 < size) { grid.AddEdge(v, v + size, rnd.Next(1, 10)); grid.AddEdge(v + size, v, rnd.Next(1, 10)); }
+                    }
+                return grid;
+            }
+            Graph plain = Grid(), g = Grid();
+            g.EnableContractionHierarchy();
+            Assert.True(g.PrecomputeContractionHierarchy());
+            Assert.True(g.ContractionHierarchyShortcuts > 0);
+            Assert.Equal(Take(plain, "V0", "V143", 50).Select(p => p.Weight), Take(g, "V0", "V143", 50).Select(p => p.Weight));
         }
 
         [Fact]

@@ -5,10 +5,12 @@ using Eppstein;
 
 /// <summary>
 /// Simple timing benchmark on grid graphs (run in Release mode):
-///   dotnet run -c Release --project Eppstein2.Benchmarks -- [size...] [--k N] [--local] [--ratio R] [--build strings|index|dimacs] [--two-way] [--simple]
+///   dotnet run -c Release --project Eppstein2.Benchmarks -- [size...] [--k N] [--local] [--ratio R] [--build strings|index|dimacs] [--two-way] [--simple] [--ch]
 /// --build chooses how the graph is built: CreateVertices/CreateEdges with labels (strings, default),
 /// AddVertex/AddEdge by index (index), or ImportDimacs from a DIMACS text in memory (dimacs).
 /// --ratio R limits paths to at most R times longer than the shortest one (MaxDetourRatio, corridor).
+/// --ch enables the contraction hierarchy (PHAST for the shortest-path tree); its preprocessing time and
+/// shortcut count are written to standard error, the first-path column then excludes it.
 /// --local searches between two nearby vertices in the middle of the grid (distance size/20
 /// in both directions) instead of corner to corner.
 /// Each grid vertex has edges to its right and lower neighbor (random weight 1..100)
@@ -22,6 +24,7 @@ class Benchmark
         bool local = false;
         bool twoWay = false;
         bool simple = false;
+        bool ch = false;
         double ratio = double.PositiveInfinity;
         string build = "strings";
         var sizes = new System.Collections.Generic.List<int>();
@@ -35,6 +38,8 @@ class Benchmark
                 twoWay = true;
             else if (args[i] == "--simple")
                 simple = true;
+            else if (args[i] == "--ch")
+                ch = true;
             else if (args[i] == "--build" && i + 1 < args.Length)
                 build = args[++i];
             else if (args[i] == "--ratio" && i + 1 < args.Length)
@@ -47,14 +52,14 @@ class Benchmark
 
         Console.WriteLine((local ? "Local query (nearby vertices in the middle of the grid)" : "Corner to corner") +
             (double.IsPositiveInfinity(ratio) ? "" : ", MaxDetourRatio = " + ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)) +
-            ", build: " + build + (twoWay ? ", two-way streets" : "") + (simple ? ", SimplePathsOnly" : ""));
+            ", build: " + build + (twoWay ? ", two-way streets" : "") + (simple ? ", SimplePathsOnly" : "") + (ch ? ", contraction hierarchy" : ""));
         Console.WriteLine("| grid | vertices | edges | build graph | memory | first path | first path (repeated query) | next paths | paths found | weight of last path |");
         Console.WriteLine("|---|---|---|---|---|---|---|---|---|---|");
         foreach (int size in sizes)
-            Run(size, k, local, ratio, build, twoWay, simple);
+            Run(size, k, local, ratio, build, twoWay, simple, ch);
     }
 
-    static void Run(int size, int k, bool local, double ratio, string build, bool twoWay, bool simple)
+    static void Run(int size, int k, bool local, double ratio, string build, bool twoWay, bool simple, bool ch)
     {
         // Edge list (vertex index = y * size + x), prepared before timing
         Random rnd = new Random(1);
@@ -113,6 +118,14 @@ class Benchmark
                 throw new ArgumentException("unknown --build " + build);
         }
         double buildTime = watch.Elapsed.TotalMilliseconds;
+
+        if (ch)
+        {
+            g.EnableContractionHierarchy();
+            watch.Restart();
+            g.PrecomputeContractionHierarchy();
+            Console.Error.WriteLine($"{size}x{size}: contraction {watch.Elapsed.TotalMilliseconds:F0} ms, {g.ContractionHierarchyShortcuts} shortcuts");
+        }
 
         watch.Restart();
         g.MaxDetourRatio = ratio;

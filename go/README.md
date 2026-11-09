@@ -124,6 +124,9 @@ properties, so a few names differ:
 | `g.WriteMetisGraph(writer)` | `g.WriteMetisGraph(w)` → `error` |
 | `g.DisableArcFlags()` / `g.PrecomputeArcFlags()` | `g.DisableArcFlags()` / `g.PrecomputeArcFlags()` |
 | `g.ArcFlagsEnabled` / `g.ArcFlagsRegionCount` | `g.ArcFlagsEnabled()` / `g.ArcFlagsRegionCount()` |
+| `g.EnableContractionHierarchy()` / `g.DisableContractionHierarchy()` | `g.EnableContractionHierarchy()` / `g.DisableContractionHierarchy()` |
+| `g.PrecomputeContractionHierarchy()` | `g.PrecomputeContractionHierarchy()` |
+| `g.ContractionHierarchyEnabled` / `g.ContractionHierarchyShortcuts` | `g.ContractionHierarchyEnabled()` / `g.ContractionHierarchyShortcuts()` |
 | `g.Serialize()` | `g.Serialize()` |
 | `g.Serialize(path)` | `g.SerializePath(path)` |
 | `g.Serialize(listOfPaths)` | `g.SerializePaths([]eppstein.Path{p1, p2})` |
@@ -184,6 +187,10 @@ Same grid graphs as in [section 11 of the main README](../README.md#11-performan
 Nearby vertices in the middle of a 1,000,000-vertex grid, first path + next 10,000 paths:
 102 ms without a corridor, **13 ms** with `g.SetMaxDetourRatio(0.1)`.
 
+Contraction hierarchy (`g.EnableContractionHierarchy()`), 40,000-vertex grid from corner to corner:
+the first path (all distances to the goal) takes 1.8 ms instead of 7.9 ms; the preparation takes
+1.2 s (`go test -run none -bench ShortestPathTree ./eppstein`).
+
 Building the 1,000,000-vertex grid (2,097,000 edges): 1.1 s with `CreateVertices` +
 `CreateEdges`, **0.45 s** with `AddVertex` + `AddEdgeGroup`, 0.73 s with `ImportDimacs`.
 
@@ -199,6 +206,7 @@ go test -run none -bench . -benchmem ./eppstein
 | `eppstein/paths.go` | Queries: Dijkstra, corridor, path enumeration, iterators |
 | `eppstein/elements.go` | `Vertex`, `Edge` and `Path` value types |
 | `eppstein/arcflags.go` | Optional arc-flags speed-up |
+| `eppstein/ch.go` | Optional contraction hierarchy with PHAST |
 | `eppstein/import.go` | CSV and DIMACS import |
 | `eppstein/serialize.go` | Graphviz (DOT) output |
 | `eppstein/pqueue.go` | Priority queue (binary heap) used by the algorithm |

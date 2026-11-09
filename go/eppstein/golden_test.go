@@ -41,48 +41,60 @@ func TestGoldenCases(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range cases {
-		t.Run(c.Name, func(t *testing.T) {
-			g := NewGraph()
-			f, err := os.Open(filepath.Join(goldenDir, c.Graph))
-			if err != nil {
-				t.Fatal(err)
+		for _, ch := range []bool{false, true} {
+			name := c.Name
+			if ch {
+				name += "/ch"
 			}
-			defer f.Close()
-			if strings.HasSuffix(c.Graph, ".gr") {
-				_, err = g.ImportDimacs(f)
-			} else {
-				_, err = g.ImportEdges(f)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if c.MaxDetour != nil {
-				g.SetMaxDetour(*c.MaxDetour)
-			}
-			if c.MaxDetourRatio != nil {
-				g.SetMaxDetourRatio(*c.MaxDetourRatio)
-			}
-			g.SetSimplePathsOnly(c.SimplePathsOnly)
-
-			// Complete: all paths must come and then an empty path. Otherwise: all paths up to
-			// the weight of the last expected one.
-			var lastWeight int64
-			if len(c.Paths) > 0 {
-				lastWeight = c.Paths[len(c.Paths)-1].Weight
-			}
-			var actual []goldenPath
-			for p := g.FindShortestPath(c.From, c.To); p.IsValid(); p = g.FindNextShortestPath() {
-				if !c.Complete && p.Weight() > lastWeight {
-					break
-				}
-				actual = append(actual, goldenPath{p.Weight(), p.VertexNames()})
-				if len(actual) > len(c.Paths) {
-					t.Fatalf("more paths than expected (%d)", len(c.Paths))
-				}
-			}
-			compareGolden(t, c.Paths, actual)
-		})
+			t.Run(name, func(t *testing.T) { checkGoldenCase(t, c, ch) })
+		}
 	}
+}
+
+// checkGoldenCase runs a golden case, with or without the contraction hierarchy.
+func checkGoldenCase(t *testing.T, c goldenCase, ch bool) {
+	g := NewGraph()
+	f, err := os.Open(filepath.Join(goldenDir, c.Graph))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if strings.HasSuffix(c.Graph, ".gr") {
+		_, err = g.ImportDimacs(f)
+	} else {
+		_, err = g.ImportEdges(f)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.MaxDetour != nil {
+		g.SetMaxDetour(*c.MaxDetour)
+	}
+	if c.MaxDetourRatio != nil {
+		g.SetMaxDetourRatio(*c.MaxDetourRatio)
+	}
+	g.SetSimplePathsOnly(c.SimplePathsOnly)
+	if ch {
+		g.EnableContractionHierarchy()
+	}
+
+	// Complete: all paths must come and then an empty path. Otherwise: all paths up to
+	// the weight of the last expected one.
+	var lastWeight int64
+	if len(c.Paths) > 0 {
+		lastWeight = c.Paths[len(c.Paths)-1].Weight
+	}
+	var actual []goldenPath
+	for p := g.FindShortestPath(c.From, c.To); p.IsValid(); p = g.FindNextShortestPath() {
+		if !c.Complete && p.Weight() > lastWeight {
+			break
+		}
+		actual = append(actual, goldenPath{p.Weight(), p.VertexNames()})
+		if len(actual) > len(c.Paths) {
+			t.Fatalf("more paths than expected (%d)", len(c.Paths))
+		}
+	}
+	compareGolden(t, c.Paths, actual)
 }
 
 func compareGolden(t *testing.T, expected, actual []goldenPath) {

@@ -255,6 +255,7 @@ public sealed partial class Graph
 
         EnsureAdjacency();
         EnsureArcFlags();
+        EnsureContractionHierarchy();
         if (stamp.Length < n)
         {
             int size = Math.Max(n, stamp.Length * 2);
@@ -299,6 +300,11 @@ public sealed partial class Graph
     /// </summary>
     private void BuildShortestPathTree()
     {
+        if (UsePhast)
+        {
+            BuildShortestPathTreePhast();
+            return;
+        }
         int query = queryStamp;
         PriorityQueue<int, long> fringe = new();  // edges by distance of their tail to the goal
         int targetRegion = ArcFlagsRegionOf(target);
