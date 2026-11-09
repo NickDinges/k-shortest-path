@@ -777,7 +777,7 @@ dotnet run -c Release --project Eppstein.Benchmarks -- 100 200 --two-way --simpl
 | `Eppstein.Benchmarks/` | Timing benchmark (see section 11) |
 | `testdata/golden/` | Graphs with expected paths, checked by the C# **and** the Go tests |
 | `.github/workflows/ci.yml` | CI: build, tests and a benchmark comparison for every pull request |
-| `docs/` | Images used in this README |
+| `docs/` | Images used in this README, and [an assessment of contraction hierarchies for this library](docs/research-ch-and-k-shortest-paths.md) |
 | `go/` | Go port of the library ([own README](go/README.md)) |
 
 ```sh
