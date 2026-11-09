@@ -30,23 +30,23 @@ namespace Eppstein
         /// <returns>DOT document describing the directed graph</returns>
         public string Serialize()
         {
-            return Serialize((IEnumerable<Path>)null);
+            return Serialize((IEnumerable<GraphPath>)null);
         }
         /// <summary>
         /// Serializes the graph into Graphviz DOT format, highlighting a path
         /// </summary>
         /// <param name="_highlight">Path to be drawn in color, ignored if null or empty</param>
         /// <returns>DOT document describing the directed graph</returns>
-        public string Serialize(Path _highlight)
+        public string Serialize(GraphPath _highlight)
         {
-            return Serialize(_highlight == null ? null : new Path[] { _highlight });
+            return Serialize(_highlight == null ? null : new GraphPath[] { _highlight });
         }
         /// <summary>
         /// Serializes the graph into Graphviz DOT format, highlighting several paths
         /// </summary>
         /// <param name="_highlight">Paths to be drawn in different colors, may be null</param>
         /// <returns>DOT document describing the directed graph</returns>
-        public string Serialize(IEnumerable<Path> _highlight)
+        public string Serialize(IEnumerable<GraphPath> _highlight)
         {
             StringWriter writer = new StringWriter(CultureInfo.InvariantCulture);
             Serialize(writer, _highlight);
@@ -58,7 +58,7 @@ namespace Eppstein
         /// <param name="_writer">Destination, e.g. a StreamWriter for a .dot file</param>
         /// <param name="_highlight">Paths to be drawn in different colors, may be null</param>
         /// <exception cref="System.ArgumentNullException">Thrown when writer is null</exception>
-        public void Serialize(TextWriter _writer, IEnumerable<Path> _highlight)
+        public void Serialize(TextWriter _writer, IEnumerable<GraphPath> _highlight)
         {
             if (_writer == null)
                 throw new ArgumentNullException("_writer");
@@ -69,7 +69,7 @@ namespace Eppstein
             if (_highlight != null)
             {
                 int index = 0;
-                foreach (Path _p in _highlight)
+                foreach (GraphPath _p in _highlight)
                 {
                     if (_p == null || !_p.IsValid)
                         continue;

@@ -46,8 +46,8 @@ func (n *stNode) sidetracks() Path {
 type Graph struct {
 	// vertices in creation order
 	vertices []*Vertex
-	// vertexIndex finds vertices by (upper case) label in constant time
-	vertexIndex map[string]*Vertex
+	// labelIndex finds vertices by (upper case) label in constant time
+	labelIndex map[string]*Vertex
 	// pathsHeap holds candidate tracks ordered by total delta
 	pathsHeap *priorityQueue[*stNode]
 	// ready tells if shortest paths have been calculated for current graph
@@ -138,7 +138,7 @@ func saturatingAdd(a, b int64) int64 {
 
 // NewGraph creates an empty graph.
 func NewGraph() *Graph {
-	return &Graph{vertexIndex: map[string]*Vertex{}}
+	return &Graph{labelIndex: map[string]*Vertex{}}
 }
 
 // CreateVertices creates all vertices of the graph from a comma-separated list of labels,
@@ -149,7 +149,7 @@ func NewGraph() *Graph {
 func (g *Graph) CreateVertices(vertices string) bool {
 	g.ready = false  // must rebuild trees
 	g.vertices = nil // remove all previous vertices
-	g.vertexIndex = map[string]*Vertex{}
+	g.labelIndex = map[string]*Vertex{}
 	g.adjacencyValid = false
 	g.resetArcFlags() // partition refers to removed vertices
 
@@ -157,15 +157,11 @@ func (g *Graph) CreateVertices(vertices string) bool {
 		if label == "" { // ignore empty labels
 			continue
 		}
-		for i, c := range label {
-			if !unicode.IsLetter(c) && (i == 0 || !unicode.IsDigit(c)) {
-				return false // must start with a letter, then letters or digits
-			}
+		if !isValidLabel(label) {
+			return false
 		}
 		if g.getVertex(label) == nil {
-			v := NewVertex(label)
-			g.vertices = append(g.vertices, v)
-			g.vertexIndex[label] = v
+			g.appendVertex(label)
 		}
 	}
 	return true
@@ -213,10 +209,21 @@ func (g *Graph) EdgeGroupWeights(group string, weight int64) {
 // path from s to t. It returns an empty path if no path exists or a label is not valid.
 // Further paths are obtained with FindNextShortestPath.
 func (g *Graph) FindShortestPath(s, t string) Path {
+	return g.findShortestPath(g.getVertex(s), g.getVertex(t))
+}
+
+// FindShortestPathByIndex is FindShortestPath for vertices given by index (as returned by
+// AddVertex or VertexIndex). It returns an empty path if an index is not valid.
+func (g *Graph) FindShortestPathByIndex(s, t int) Path {
+	return g.findShortestPath(g.vertexAt(s), g.vertexAt(t))
+}
+
+// findShortestPath calculates the shortest path tree towards t and returns the shortest path.
+func (g *Graph) findShortestPath(s, t *Vertex) Path {
 	g.ready = false
 
-	g.sourceVertex = g.getVertex(strings.ToUpper(s))
-	g.endVertex = g.getVertex(strings.ToUpper(t))
+	g.sourceVertex = s
+	g.endVertex = t
 	if g.sourceVertex == nil || g.endVertex == nil {
 		return Path{}
 	}
@@ -257,6 +264,39 @@ func (g *Graph) FindNextShortestPath() Path {
 	return g.rebuildPath(node.sidetracks())
 }
 
+// isValidLabel tells if a label starts with a letter and contains only letters and digits.
+func isValidLabel(label string) bool {
+	if label == "" {
+		return false
+	}
+	for i, c := range label {
+		if !unicode.IsLetter(c) && (i == 0 || !unicode.IsDigit(c)) {
+			return false
+		}
+	}
+	return true
+}
+
+// appendVertex adds a vertex with a valid, unused, upper case label.
+func (g *Graph) appendVertex(label string) *Vertex {
+	if g.labelIndex == nil { // zero value Graph{} instead of NewGraph()
+		g.labelIndex = map[string]*Vertex{}
+	}
+	v := NewVertex(label)
+	v.index = len(g.vertices)
+	g.vertices = append(g.vertices, v)
+	g.labelIndex[label] = v
+	return v
+}
+
+// vertexAt returns the vertex at an index, nil if the index is not valid.
+func (g *Graph) vertexAt(index int) *Vertex {
+	if index < 0 || index >= len(g.vertices) {
+		return nil
+	}
+	return g.vertices[index]
+}
+
 // parseVertices parses a comma-separated list of labels, nil if a vertex does not exist.
 func (g *Graph) parseVertices(labels string) []*Vertex {
 	var result []*Vertex
@@ -275,10 +315,10 @@ func (g *Graph) getVertex(label string) *Vertex {
 	if label == "" {
 		return nil
 	}
-	if g.vertexIndex == nil { // zero value Graph{} instead of NewGraph()
-		g.vertexIndex = map[string]*Vertex{}
+	if g.labelIndex == nil { // zero value Graph{} instead of NewGraph()
+		g.labelIndex = map[string]*Vertex{}
 	}
-	return g.vertexIndex[strings.ToUpper(label)]
+	return g.labelIndex[strings.ToUpper(label)]
 }
 
 // ensureAdjacency builds the incoming and outgoing edge slices of all vertices from

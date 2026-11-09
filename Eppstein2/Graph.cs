@@ -65,7 +65,7 @@ namespace Eppstein
         /// <summary>
         /// Explicit sidetrack collection (root nodes only), null for chained nodes
         /// </summary>
-        private readonly Path explicitSidetracks;
+        private readonly GraphPath explicitSidetracks;
         /// <summary>
         /// Parent node (same sidetracks without the last one), null for root nodes
         /// </summary>
@@ -89,7 +89,7 @@ namespace Eppstein
         /// </summary>
         /// <param name="_sidetracks">Sidetrack collection</param>
         /// <remarks>Weight is calculated using path's weight</remarks>
-        public ST_Node(Path _sidetracks)
+        public ST_Node(GraphPath _sidetracks)
         {
             this.explicitSidetracks = _sidetracks;
             this.Weight = _sidetracks.DeltaWeight;
@@ -121,7 +121,7 @@ namespace Eppstein
         /// Collection of edges (sidetracks), not exactly a full path
         /// </summary>
         /// <remarks>Built on demand from the chain of parent nodes</remarks>
-        public Path Sidetracks
+        public GraphPath Sidetracks
         {
             get
             {
@@ -132,7 +132,7 @@ namespace Eppstein
                     reversed.Add(node.LastSidetrack);
                     node = node.Parent;
                 }
-                Path result = new Path();
+                GraphPath result = new GraphPath();
                 result.AddRange(node.explicitSidetracks);
                 for (int i = reversed.Count - 1; i >= 0; i--)
                     result.Add(reversed[i]);
@@ -187,7 +187,7 @@ namespace Eppstein
         /// </summary>
         private List<Vertex> Vertices;
         /// <summary>
-        /// Vertices by label (case-insensitive), for constant time lookup
+        /// Vertices by upper case label, for constant time lookup (see GetVertex)
         /// </summary>
         private Dictionary<string, Vertex> VertexIndex;
         /// <summary>
@@ -300,7 +300,7 @@ namespace Eppstein
         public Graph()
         {
             Vertices = new List<Vertex>();
-            VertexIndex = new Dictionary<string, Vertex>(StringComparer.InvariantCultureIgnoreCase);
+            VertexIndex = new Dictionary<string, Vertex>(StringComparer.Ordinal);
             Ready = false;
         }
         /// <summary>
@@ -324,20 +324,10 @@ namespace Eppstein
             {
                 if (_label.Length == 0)  // ignore empty labels
                     continue;
-                if (!char.IsLetter(_label, 0))  // label must start with a letter
+                if (!IsValidLabel(_label))
                     return false;
-
-                foreach (char c in _label)
-                {
-                    if (!char.IsLetterOrDigit(c))  // label just can contain letters and digits
-                        return false;
-                }
                 if (GetVertex(_label)==null)
-                {
-                    Vertex v = new Vertex(_label);
-                    Vertices.Add(v);
-                    VertexIndex.Add(_label, v);
-                }
+                    AppendVertex(_label);
             }
 
             return true;
@@ -398,15 +388,35 @@ namespace Eppstein
         /// <param name="_s">Label of initial vertex</param>
         /// <param name="_t">Label of ending vertex</param>
         /// <returns>Directional path if found, empty path if not or labels not valid</returns>
-        public Path FindShortestPath(string _s, string _t)
+        public GraphPath FindShortestPath(string _s, string _t)
+        {
+            // Parse start and end vertex strings
+            return FindShortestPath(this.GetVertex(_s.ToUpper()), this.GetVertex(_t.ToUpper()));
+        }
+        /// <summary>
+        /// Calculates all shortest paths between two vertices given by index and returns the first one
+        /// </summary>
+        /// <param name="_s">Index of initial vertex (as returned by AddVertex or GetVertexIndex)</param>
+        /// <param name="_t">Index of ending vertex</param>
+        /// <returns>Directional path if found, empty path if not or indices not valid</returns>
+        public GraphPath FindShortestPath(int _s, int _t)
+        {
+            return FindShortestPath(VertexAt(_s), VertexAt(_t));
+        }
+        /// <summary>
+        /// Calculates all shortest paths between s and t and returns the first one
+        /// </summary>
+        /// <param name="_s">Initial vertex, null if not found</param>
+        /// <param name="_t">Ending vertex, null if not found</param>
+        /// <returns>Directional path if found, empty path if not or vertices are null</returns>
+        private GraphPath FindShortestPath(Vertex _s, Vertex _t)
         {
             Ready = false;
 
-            // Parse start and end vertex strings
-            this.SourceVertex = this.GetVertex(_s.ToUpper());
-            this.EndVertex = this.GetVertex(_t.ToUpper());
+            this.SourceVertex = _s;
+            this.EndVertex = _t;
             if (SourceVertex == null || EndVertex == null)
-                return new Path(); // Invalid path
+                return new GraphPath(); // Invalid path
 
             // Splits edges into incoming and outgoing arrays if the graph changed
             EnsureAdjacency();
@@ -433,15 +443,15 @@ namespace Eppstein
         /// <returns>Directional path if available, empty path if not remaining paths</returns>
         /// <remarks>Paths may repeat vertices and edges (as in Eppstein), so a graph with a cycle
         /// reachable between s and t has infinitely many paths: limit the number of calls</remarks>
-        public Path FindNextShortestPath()
+        public GraphPath FindNextShortestPath()
         {
             if (!Ready)
-                return new Path();  // Invalid path
+                return new GraphPath();  // Invalid path
 
             // Pick next track from heap, it is ordered from shortest path to longest
             ST_Node node = this.PathsHeap.Dequeue();
             if (node == null)
-                return new Path(); // Invalid path
+                return new GraphPath(); // Invalid path
 
             // Lazy expansion: enqueues at most 3 successors of this track
             AddSidetracks(node);
@@ -475,17 +485,54 @@ namespace Eppstein
             return result;
         }
         /// <summary>
+        /// Tells if a label is valid: starts with a letter, then only letters or digits
+        /// </summary>
+        private static bool IsValidLabel(string _label)
+        {
+            if (string.IsNullOrEmpty(_label) || !char.IsLetter(_label, 0))
+                return false;
+            foreach (char c in _label)
+                if (!char.IsLetterOrDigit(c))
+                    return false;
+            return true;
+        }
+        /// <summary>
+        /// Adds a new vertex with an upper case label, which must be valid and not used yet
+        /// </summary>
+        /// <returns>The new vertex</returns>
+        private Vertex AppendVertex(string _label)
+        {
+            Vertex v = new Vertex(_label);
+            v.Index = Vertices.Count;
+            Vertices.Add(v);
+            VertexIndex.Add(_label, v);
+            return v;
+        }
+        /// <summary>
+        /// Returns the vertex at an index, null if the index is not valid
+        /// </summary>
+        private Vertex VertexAt(int _index)
+        {
+            return _index >= 0 && _index < Vertices.Count ? Vertices[_index] : null;
+        }
+        /// <summary>
         /// Returns a reference for existing vertex
         /// </summary>
         /// <param name="_label">Label of vertex to search for</param>
         /// <returns>Vertex reference, null if not fount or empty label</returns>
+        /// <remarks>Labels are stored in upper case; other spellings are converted (case-insensitive)</remarks>
         private Vertex GetVertex(string _label)
         {
             if (string.IsNullOrEmpty(_label))
                 return null;
 
             Vertex v;
-            return VertexIndex.TryGetValue(_label, out v) ? v : null;
+            if (VertexIndex.TryGetValue(_label, out v))
+                return v;
+            string upper = _label.ToUpper();
+            if (!ReferenceEquals(upper, _label) && upper != _label && VertexIndex.TryGetValue(upper, out v))
+                return v;
+            return null;
         }
         /// <summary>
         /// Builds the incoming and outgoing edge arrays of all vertices from RelatedEdges, if the
@@ -587,7 +634,7 @@ namespace Eppstein
         private void BuildSidetracksHeap()
         {
             this.PathsHeap = new PriorityQueue<ST_Node>(64);
-            this.PathsHeap.Enqueue(new ST_Node(new Path()));
+            this.PathsHeap.Enqueue(new ST_Node(new GraphPath()));
             this.CandidatesCreated = 1;
         }
         /// <summary>
@@ -662,9 +709,9 @@ namespace Eppstein
         /// </summary>
         /// <param name="_sidetracks">Sidetracks collections for this path, could be empty for shortest</param>
         /// <returns>Full path reconstructed from s to t, crossing sidetracks</returns>
-        private Path RebuildPath(Path _sidetracks)
+        private GraphPath RebuildPath(GraphPath _sidetracks)
         {
-            Path path = new Path();
+            GraphPath path = new GraphPath();
             Vertex v = this.SourceVertex;
             int i = 0;
 

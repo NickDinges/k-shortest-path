@@ -25,6 +25,8 @@ type Vertex struct {
 	RelatedEdges []*Edge
 	// Region of the vertex for the arc-flags optimization, -1 if not assigned.
 	Region int
+	// index is the position of the vertex in the graph (see AddVertex and VertexIndex).
+	index int
 
 	// outEdges and inEdges split RelatedEdges by direction (built by the graph before a query).
 	outEdges, inEdges []*Edge

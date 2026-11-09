@@ -100,7 +100,6 @@ dotnet add MyRoutes reference k-shortest-path/Eppstein2/Eppstein2.csproj
 ```csharp
 using System;
 using Eppstein;
-using Path = Eppstein.Path;   // see pitfall 7 in section 7
 
 class Example
 {
@@ -121,7 +120,7 @@ class Example
         g.CreateEdges("STATION","OFFICE",  1, "train");
 
         // 3. Ask for the shortest route, then for the next ones
-        Path p = g.FindShortestPath("HOME", "OFFICE");
+        GraphPath p = g.FindShortestPath("HOME", "OFFICE");
         for (int i = 1; i <= 5 && p.IsValid; i++)
         {
             Console.WriteLine(i + ". " + p.VertexNames + "  (" + p.Weight + " minutes)");
@@ -164,8 +163,8 @@ That's it. The pattern is always the same:
 | **Edge** (arc) | A **one-way** connection from one vertex to another. For a two-way road, create two edges. | `Edge`, created with `CreateEdges` |
 | **Weight** | The cost of using an edge: distance, time, price… Whole numbers of type `long` (up to about 9.2 × 10¹⁸). | `Edge.Weight` |
 | **Group** | A name you give to edges, so you can change all their weights at once. | `EdgeGroupWeights` |
-| **Path** (route) | A chain of edges from the start to the goal. | `Path` |
-| **Path weight** | The sum of all edge weights in the path. "Shortest" means "smallest total weight". | `Path.Weight` |
+| **Path** (route) | A chain of edges from the start to the goal. | `GraphPath` |
+| **Path weight** | The sum of all edge weights in the path. "Shortest" means "smallest total weight". | `GraphPath.Weight` |
 | **k shortest paths** | The best path, the 2nd best, …, the k-th best. | `FindShortestPath` + `FindNextShortestPath` |
 
 ## 5. API reference
@@ -180,16 +179,68 @@ All methods are on the `Graph` class (namespace `Eppstein`).
 | `CreateEdges(from, to, weight, group)` | Adds one-way edges. `from` and `to` are comma-separated lists of the same length. | `true`, or `false` if a vertex doesn't exist or the lists differ in length |
 | `EdgeGroupWeights(group, weight)` | Sets a new weight for every edge of a group. | nothing |
 
+For **large graphs**, add vertices and edges by number instead of by name. This is several times
+faster, because no name lists have to be split and looked up for every edge:
+
+| Method | What it does | Returns |
+|---|---|---|
+| `AddVertex("A")` | Adds one vertex and keeps everything else. | its **index** (0, 1, 2, …); the existing index if the name is taken; `-1` if the name is invalid |
+| `AddEdge(fromIndex, toIndex, weight)` | Adds one one-way edge between vertices given by index. An overload takes a `group` as 4th value. | `true`, or `false` if an index is invalid |
+| `GetVertexIndex("A")` | Index of a vertex. | the index, or `-1` |
+| `VertexCount` | Number of vertices (valid indices are `0` to `VertexCount - 1`). | |
+| `ImportEdges(reader)` | Reads edges from a CSV text (see below). | number of edges read |
+| `ImportDimacs(reader)` | Reads a graph in the DIMACS format (see below). | number of edges read |
+
+```csharp
+Graph g = new Graph();
+int home = g.AddVertex("HOME");
+int office = g.AddVertex("OFFICE");
+g.AddEdge(home, office, 10);
+GraphPath p = g.FindShortestPath(home, office);   // also works with indices
+```
+
+All ways of building can be mixed. Vertices created by `CreateVertices` get indices too, in the
+order of the list.
+
+**CSV files** (`ImportEdges`): one edge per line, `from,to,weight` or `from,to,weight,group`.
+Missing vertices are created. Empty lines and lines starting with `#` are skipped:
+
+```text
+# from,to,weight,group
+HOME,PARK,2
+PARK,OFFICE,7,train
+```
+
+```csharp
+using (var file = new System.IO.StreamReader("roads.csv"))
+    g.ImportEdges(file);
+```
+
+**DIMACS files** (`ImportDimacs`): the format of the
+[DIMACS road networks](https://www.diag.uniroma1.it/challenge9/download.shtml) with millions of
+vertices. Vertex number `n` gets the name `V` + `n` (`V1`, `V2`, …):
+
+```text
+c comment
+p sp 3 2        <- 3 vertices, 2 edges
+a 1 2 5         <- edge from vertex 1 to vertex 2, weight 5
+a 2 3 5
+```
+
+Both imports keep what is already in the graph. A broken line throws a `FormatException` whose
+message starts with the line number (`Line 7: invalid weight 'x'`); the lines before it stay
+imported.
+
 ### Asking for paths
 
 | Method | What it does | Returns |
 |---|---|---|
-| `FindShortestPath(start, goal)` | Prepares everything and returns the **shortest** path. | `Path` (empty if none exists) |
-| `FindNextShortestPath()` | Returns the **next** shortest path. Call it again and again. | `Path` (empty when there are no more) |
+| `FindShortestPath(start, goal)` | Prepares everything and returns the **shortest** path. Start and goal are names, or indices (see above). | `GraphPath` (empty if none exists) |
+| `FindNextShortestPath()` | Returns the **next** shortest path. Call it again and again. | `GraphPath` (empty when there are no more) |
 
-### Working with a `Path`
+### Working with a `GraphPath`
 
-A `Path` is a list of `Edge` objects (`List<Edge>`), so you can loop over it with `foreach`.
+A `GraphPath` is a list of `Edge` objects (`List<Edge>`), so you can loop over it with `foreach`.
 
 | Member | Meaning |
 |---|---|
@@ -217,7 +268,7 @@ README were made this way.
 ```csharp
 string dot = g.Serialize();                    // just the graph
 dot = g.Serialize(path);                       // with one path highlighted in red
-dot = g.Serialize(new List<Path> { p1, p2 });  // several paths, one color each
+dot = g.Serialize(new List<GraphPath> { p1, p2 });  // several paths, one color each
 System.IO.File.WriteAllText("graph.dot", dot); // save it to a file
 ```
 
@@ -291,15 +342,10 @@ g.EdgeGroupWeights("train", 1);    // turn them back on
 one may come first. The order is the same every time you run the same program, but it may differ
 between versions of the library (and between the C# and the Go version).
 
-**7. Name clash with `System.IO.Path`.** .NET has its own class called `Path`, for file paths.
-New projects (`dotnet new console`) import it automatically, so `Path p = ...` fails with
-*"'Path' is an ambiguous reference"*. Add this line at the top of your file:
-
-```csharp
-using Path = Eppstein.Path;
-```
-
-Or write `Eppstein.Path` instead of `Path`.
+**7. Paths are `GraphPath`, not `Path`.** In older versions the class was called `Path`. That
+clashed with .NET's own `System.IO.Path` (for file paths), which new projects import
+automatically, and caused the error *"'Path' is an ambiguous reference"*. If you upgrade, replace
+`Path` by `GraphPath` wherever you mean a path of this library.
 
 **8. Weights are `long`, not `int`.** Weights and distances are 64-bit numbers, so very large
 weights (for example distances in millimeters) work. Passing an `int` is fine
@@ -328,7 +374,7 @@ g.MaxDetourRatio = 0.2;   // paths at most 20% longer than the shortest one
 // or an absolute limit, in the unit of your weights:
 g.MaxDetour = 15;         // paths at most 15 minutes longer than the shortest one
 
-Path p = g.FindShortestPath("HOME", "OFFICE");
+GraphPath p = g.FindShortestPath("HOME", "OFFICE");
 while (p.IsValid)         // ends by itself: the number of paths within the limit is finite
 {
     Console.WriteLine(p.VertexNames + " (" + p.Weight + ")");
@@ -364,7 +410,7 @@ g.EnableArcFlags(3);   // let the library split the graph into about 3 regions
 // or choose regions yourself (separated by ';'), unlisted vertices form one extra region:
 g.EnableArcFlags("S,A,B,C;D,E,F;G,H,I,J,K,T");
 
-Path p = g.FindShortestPath("S", "T");   // same results as before, possibly faster
+GraphPath p = g.FindShortestPath("S", "T");   // same results as before, possibly faster
 ```
 
 Good to know:
@@ -423,13 +469,21 @@ in Release mode on a 4-core cloud VM.
 
 **From one corner to the opposite one** (paths cross the whole graph):
 
-| Vertices | Edges | Build graph | First path | First path, repeated query | Next 10,000 paths |
+| Vertices | Edges | Build graph (by name) | First path | First path, repeated query | Next 10,000 paths |
 |---|---|---|---|---|---|
-| 2,500 | 5,100 | 31 ms | 13 ms | 4 ms | 67 ms |
-| 10,000 | 20,700 | 43 ms | 12 ms | 9 ms | 92 ms |
-| 40,000 | 83,400 | 139 ms | 49 ms | 42 ms | 92 ms |
-| 160,000 | 334,800 | 596 ms | 100 ms | 82 ms | 392 ms |
-| 1,000,000 | 2,097,000 | 5.1 s | 909 ms | 625 ms | 842 ms |
+| 2,500 | 5,100 | 20 ms | 13 ms | 5 ms | 67 ms |
+| 10,000 | 20,700 | 31 ms | 10 ms | 7 ms | 100 ms |
+| 40,000 | 83,400 | 97 ms | 30 ms | 14 ms | 197 ms |
+| 160,000 | 334,800 | 345 ms | 113 ms | 87 ms | 427 ms |
+| 1,000,000 | 2,097,000 | 3.2 s | 887 ms | 616 ms | 1.1 s |
+
+**Building the graph** with 1,000,000 vertices and 2,097,000 edges (section 5):
+
+| Way of building | Time |
+|---|---|
+| `CreateVertices` + `CreateEdges` (by name) | 3.2 s |
+| `AddVertex` + `AddEdge` (by index) | **1.4 s** |
+| `ImportDimacs` (from text in memory) | 2.0 s |
 
 **Between two nearby vertices** in the middle of the 1,000,000-vertex grid, with and without a
 corridor (section 8):
@@ -446,7 +500,8 @@ query without it.
 
 What makes it fast:
 
-- **Vertex lookup by name** uses a dictionary, so adding an edge takes constant time.
+- **Vertex lookup by name** uses a dictionary, so adding an edge takes constant time. Building
+  by index (`AddVertex`/`AddEdge`) skips the name lookup completely.
 - **Priority queues** are binary heaps (O(log n) per operation).
 - **At most three candidates per path**, thanks to the persistent detour heaps (section 9).
   Candidates store only their parent and one detour, not a copy of all detours.
@@ -454,11 +509,12 @@ What makes it fast:
 - **Edges are stored by direction**, so the searches never look at edges going the wrong way.
 
 Run the benchmark yourself (sizes are grid widths; `--k` = number of paths, `--local` = nearby
-vertices, `--ratio` = `MaxDetourRatio`):
+vertices, `--ratio` = `MaxDetourRatio`, `--build strings|index|dimacs` = way of building):
 
 ```sh
 dotnet run -c Release --project Eppstein2.Benchmarks -- 50 100 200 --k 10000
 dotnet run -c Release --project Eppstein2.Benchmarks -- 1000 --local --ratio 0.1
+dotnet run -c Release --project Eppstein2.Benchmarks -- 1000 --build index
 ```
 
 ## 11. Project layout and tests
@@ -468,7 +524,8 @@ dotnet run -c Release --project Eppstein2.Benchmarks -- 1000 --local --ratio 0.1
 | `Eppstein2/Graph.cs` | Main algorithm: building the graph, Dijkstra, path enumeration |
 | `Eppstein2/Graph.ArcFlags.cs` | Optional arc-flags speed-up |
 | `Eppstein2/Graph.Serialize.cs` | Graphviz (DOT) output |
-| `Eppstein2/GraphElements.cs` | `Vertex`, `Edge` and `Path` classes |
+| `Eppstein2/GraphElements.cs` | `Vertex`, `Edge` and `GraphPath` classes |
+| `Eppstein2/Graph.Building.cs` | Building by index (`AddVertex`, `AddEdge`) and CSV/DIMACS import |
 | `Eppstein2/PriorityQueue.cs` | Priority queue (binary heap) used by the algorithm |
 | `Eppstein2/SidetrackHeap.cs` | Persistent heap of detours (Eppstein's path enumeration) |
 | `Eppstein2/Program.cs` | Demo program (`dotnet run --project Eppstein2 -- [k] [--dot file]`) |

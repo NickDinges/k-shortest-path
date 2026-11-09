@@ -68,14 +68,14 @@ namespace Eppstein
 
             System.Diagnostics.Stopwatch stp = new System.Diagnostics.Stopwatch();
             stp.Start();            
-            Path p = g.FindShortestPath("S", "T");
+            GraphPath p = g.FindShortestPath("S", "T");
             stp.Stop();
 
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("Calculation time: " + stp.ElapsedMilliseconds + " ms");
             Console.ResetColor();
 
-            List<Path> found = new List<Path>();
+            List<GraphPath> found = new List<GraphPath>();
             for (int i = 0; i < k && p.IsValid; i++)
             {
                 Console.WriteLine(p.VertexNames + " (" + p.Weight + ")");

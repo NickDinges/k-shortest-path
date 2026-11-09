@@ -95,6 +95,13 @@ properties, so a few names differ:
 | `g.CreateVertices("A,B")` → `bool` | `g.CreateVertices("A,B")` → `bool` |
 | `g.CreateEdges(tails, heads, weight, group)` → `bool` | `g.CreateEdges(tails, heads, weight, group)` → `bool` |
 | `g.EdgeGroupWeights(group, weight)` | `g.EdgeGroupWeights(group, weight)` |
+| `g.AddVertex("A")` → `int` | `g.AddVertex("A")` → `int` |
+| `g.AddEdge(tail, head, weight)` | `g.AddEdge(tail, head, weight)` |
+| `g.AddEdge(tail, head, weight, group)` | `g.AddEdgeGroup(tail, head, weight, group)` |
+| `g.GetVertexIndex("A")`, `g.VertexCount` | `g.VertexIndex("A")`, `g.VertexCount()` |
+| `g.FindShortestPath(sIndex, tIndex)` | `g.FindShortestPathByIndex(sIndex, tIndex)` |
+| `g.ImportEdges(reader)` → `int`, throws `FormatException` | `g.ImportEdges(r)` → `(int, error)` |
+| `g.ImportDimacs(reader)` → `int`, throws `FormatException` | `g.ImportDimacs(r)` → `(int, error)` |
 | `g.FindShortestPath(s, t)` → `Path` | `g.FindShortestPath(s, t)` → `Path` |
 | `g.FindNextShortestPath()` → `Path` | `g.FindNextShortestPath()` → `Path` |
 | `g.EnableArcFlags(3)` | `g.EnableArcFlags(3)` |
@@ -109,7 +116,7 @@ properties, so a few names differ:
 | `g.Serialize(path)` | `g.SerializePath(path)` |
 | `g.Serialize(listOfPaths)` | `g.SerializePaths([]eppstein.Path{p1, p2})` |
 | `g.Serialize(writer, paths)` (throws on null) | `g.SerializeTo(w, paths)` → `error` |
-| `Path : List<Edge>` | `type Path []*Edge` |
+| `GraphPath : List<Edge>` | `type Path []*Edge` (in Go always written `eppstein.Path`, so no name clash) |
 | `p.IsValid`, `p.Weight`, `p.VertexNames`, `p.DeltaWeight` | `p.IsValid()`, `p.Weight()`, `p.VertexNames()`, `p.DeltaWeight()` |
 | `p.Count` | `len(p)` |
 | `edge.Tail`, `edge.Head`, `edge.Weight`, `edge.Group` | `edge.Tail`, `edge.Head`, `edge.Weight`, `edge.Group` |
@@ -155,6 +162,9 @@ Same grid graphs as in [section 10 of the main README](../README.md#10-performan
 Nearby vertices in the middle of a 1,000,000-vertex grid, first path + next 10,000 paths:
 221 ms without a corridor, **33 ms** with `g.SetMaxDetourRatio(0.1)`.
 
+Building the 1,000,000-vertex grid (2,097,000 edges): 1.7 s with `CreateVertices` +
+`CreateEdges`, **0.73 s** with `AddVertex` + `AddEdgeGroup`, 1.1 s with `ImportDimacs`.
+
 ```sh
 go test -run none -bench . -benchmem ./eppstein
 ```
@@ -167,6 +177,7 @@ go test -run none -bench . -benchmem ./eppstein
 | `eppstein/arcflags.go` | Optional arc-flags speed-up |
 | `eppstein/serialize.go` | Graphviz (DOT) output |
 | `eppstein/elements.go` | `Vertex`, `Edge` and `Path` types |
+| `eppstein/building.go` | Building by index (`AddVertex`, `AddEdge`) and CSV/DIMACS import |
 | `eppstein/pqueue.go` | Priority queue (binary heap) used by the algorithm |
 | `eppstein/sidetrackheap.go` | Persistent heap of detours (Eppstein's path enumeration) |
 | `eppstein/*_test.go` | Tests, benchmarks and runnable examples |
