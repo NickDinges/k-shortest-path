@@ -16,3 +16,4 @@ paper/*.fls
 paper/*.fdb_latexmk
 paper/*.toc
 __pycache__/
+!rust/src/bin/

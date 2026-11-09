@@ -1,9 +1,25 @@
 # k-shortest-path
 
 Find the **shortest route** between two points in a network, then the **second shortest**, the
-**third shortest**, and so on. This is a C# implementation of
+**third shortest**, and so on. This is a C# implementation (with Go and Rust ports) of
 [Eppstein's algorithm](http://www.ics.uci.edu/~eppstein/pubs/Epp-SJC-98.pdf) for the
 *k shortest paths* problem.
+
+<a href="paper/main.pdf"><img src="docs/paper-first-page.png" alt="First page of the paper" width="170" align="right"></a>
+
+### 📄 The paper
+
+**[From a 2010 Prototype to Contraction Hierarchies in Three Languages](paper/main.pdf)**: how this
+library grew from a 2010 prototype into Eppstein + Yen–Lawler + arc flags + contraction hierarchies,
+in C#, Go and Rust. An experiment: code, tests, measurements and text were generated with Claude.
+
+- Same graphs, three languages: within **1.3×** of each other; garbage collection makes **no
+  measurable difference**.
+- Algorithms beat languages: first path **40 s → 0.12 ms** compared with the 2010 version.
+
+[Read the PDF](paper/main.pdf) · [Summary](#15-the-paper) · [Reproduce](paper/README.md)
+
+<br clear="right">
 
 ![Example graph with the three shortest paths from S to T highlighted](docs/eppstein-example.svg)
 
@@ -11,8 +27,7 @@ Find the **shortest route** between two points in a network, then the **second s
 blue and green. The number under each letter is the distance from that point to T.*
 
 > **Go and Rust versions:** ports with the same API and results live in [`go/`](go/README.md) and
-> [`rust/`](rust/README.md). A paper comparing the three and describing the algorithms and the
-> AI-assisted development is in [`paper/`](paper/README.md) ([PDF](paper/main.pdf)).
+> [`rust/`](rust/README.md).
 
 **Contents**
 
@@ -30,6 +45,7 @@ blue and green. The number under each letter is the distance from that point to 
 12. [Project layout and tests](#12-project-layout-and-tests)
 13. [Upgrading from version 1](#13-upgrading-from-version-1)
 14. [Further reading](#14-further-reading)
+15. [The paper](#15-the-paper)
 
 ---
 
@@ -928,3 +944,33 @@ Version 2 changed the interface. What to change in your code:
 - [K shortest path routing](https://en.wikipedia.org/wiki/K_shortest_path_routing) and
   [Yen's algorithm](https://en.wikipedia.org/wiki/Yen%27s_algorithm) on Wikipedia.
 - [Graphviz documentation](https://graphviz.org/documentation/).
+- The paper on this library ([section 15](#15-the-paper)): algorithms, the C#/Go/Rust comparison and
+  how the library was developed with Claude.
+
+## 15. The paper
+
+[`paper/main.pdf`](paper/main.pdf) (11 pages, English, LaTeX source in [`paper/`](paper/README.md)):
+*From a 2010 Prototype to Contraction Hierarchies in Three Languages: Engineering k Shortest Paths
+with Eppstein, Yen–Lawler, Arc Flags and PHAST*.
+
+The paper is the result of an experiment: the code in all three languages, the tests, the
+measurements and the text were generated with Claude (Anthropic) through Claude Code, under the
+direction of the repository's author. It covers:
+
+- **The algorithms and how they work together** (sections 9 and 10 of this README in more depth):
+  Eppstein with lazy persistent heaps, the corridor, Yen–Lawler with exact A\*, arc flags with
+  external partitions, and PHAST on a contraction hierarchy, with related work.
+- **C#, Go and Rust compared** on exactly the same graphs, with the same benchmark program in all
+  three languages:
+  - the three are within a factor of 1.3 for the shortest-path tree on 1,000,000 vertices;
+  - Rust is mostly 10–40% faster;
+  - garbage collection makes no measurable difference (Go with the collector switched off is not
+    faster);
+  - the largest gaps come from .NET's tiered JIT compilation on short runs.
+- **Algorithms matter more than languages:** the original 2010 version needs 40 s for the first path
+  on a 12×12 grid, the current one 0.12 ms; a corridor turns a 69 ms query into 0.5 ms.
+- **How the work was done:** what came from the author (the 2010 code, short requests, ideas from
+  a domain expert), what Claude did, where it made mistakes, and how the tests caught them.
+
+Every number in the paper comes from scripts and CSV files in `paper/`; see
+[`paper/README.md`](paper/README.md) to reproduce the measurements and to build the PDF.

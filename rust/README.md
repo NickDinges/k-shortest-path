@@ -3,6 +3,9 @@
 Rust port of the [C# library](../README.md), with the same algorithms and results as the C# and
 [Go](../go/README.md) versions. It checks the same golden data in `../testdata/golden`.
 
+> **Paper:** [`../paper/main.pdf`](../paper/main.pdf) compares this Rust version with the C# and Go
+> versions on identical graphs. See [section 15 of the main README](../README.md#15-the-paper).
+
 - Eppstein's k shortest paths (paths may repeat vertices), with lazily built persistent heaps
 - `set_simple_paths_only(true)`: k shortest simple paths (Yen with Lawler's rule, A* spur searches)
 - corridor: `set_max_detour`, `set_max_detour_ratio`
