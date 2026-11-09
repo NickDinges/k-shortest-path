@@ -30,6 +30,7 @@ blue and green. The number under each letter is the distance from that point to 
 12. [Project layout and tests](#12-project-layout-and-tests)
 13. [Upgrading from version 1](#13-upgrading-from-version-1)
 14. [Further reading](#14-further-reading)
+15. [The paper](#15-the-paper)
 
 ---
 
@@ -928,3 +929,33 @@ Version 2 changed the interface. What to change in your code:
 - [K shortest path routing](https://en.wikipedia.org/wiki/K_shortest_path_routing) and
   [Yen's algorithm](https://en.wikipedia.org/wiki/Yen%27s_algorithm) on Wikipedia.
 - [Graphviz documentation](https://graphviz.org/documentation/).
+- The paper on this library ([section 15](#15-the-paper)): algorithms, the C#/Go/Rust comparison and
+  how the library was developed with Claude.
+
+## 15. The paper
+
+[`paper/main.pdf`](paper/main.pdf) (11 pages, English, LaTeX source in [`paper/`](paper/README.md)):
+*From a 2010 Prototype to Contraction Hierarchies in Three Languages: Engineering k Shortest Paths
+with Eppstein, Yen–Lawler, Arc Flags and PHAST*.
+
+The paper is the result of an experiment: the code in all three languages, the tests, the
+measurements and the text were generated with Claude (Anthropic) through Claude Code, under the
+direction of the repository's author. It covers:
+
+- **The algorithms and how they work together** (sections 9 and 10 of this README in more depth):
+  Eppstein with lazy persistent heaps, the corridor, Yen–Lawler with exact A\*, arc flags with
+  external partitions, and PHAST on a contraction hierarchy, with related work.
+- **C#, Go and Rust compared** on exactly the same graphs, with the same benchmark program in all
+  three languages:
+  - the three are within a factor of 1.3 for the shortest-path tree on 1,000,000 vertices;
+  - Rust is mostly 10–40% faster;
+  - garbage collection makes no measurable difference (Go with the collector switched off is not
+    faster);
+  - the largest gaps come from .NET's tiered JIT compilation on short runs.
+- **Algorithms matter more than languages:** the original 2010 version needs 40 s for the first path
+  on a 12×12 grid, the current one 0.12 ms; a corridor turns a 69 ms query into 0.5 ms.
+- **How the work was done:** what came from the author (the 2010 code, short requests, ideas from
+  a domain expert), what Claude did, where it made mistakes, and how the tests caught them.
+
+Every number in the paper comes from scripts and CSV files in `paper/`; see
+[`paper/README.md`](paper/README.md) to reproduce the measurements and to build the PDF.
