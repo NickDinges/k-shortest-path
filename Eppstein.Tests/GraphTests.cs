@@ -345,6 +345,36 @@ namespace Eppstein.Tests
         }
 
         [Fact]
+        public void VertexAndEdge_EqualityHashingAndQueryValues()
+        {
+            Graph g = EppsteinExample();
+            GraphPath p = g.FindShortestPath("S", "T");
+            Edge first = p[0];
+            Vertex s = first.Tail;
+
+            // Equality works in hash sets and with object.Equals
+            Assert.Single(new HashSet<Vertex> { s, g.GetVertex(s.Index), first.Tail });
+            Assert.Single(new HashSet<Edge> { first, g.GetEdge(first.Id) });
+            Assert.True(s.Equals((object)g.GetVertex(s.Index)));
+            Assert.False(s.Equals("S"));  // Not equal to its label
+            Assert.True(first != p[1]);
+            Assert.True(s != first.Head);
+            Assert.False(first.Equals((object)null));
+
+            Assert.Equal("ALPHA", first.Group);
+            Assert.Equal(0, first.Delta);  // Tree edge of the shortest path
+            Assert.Equal(-1, s.Region);    // No arc flags
+            Assert.True(first.HasArcFlag(0));
+            g.EnableArcFlags("S,A,B,C;D,E,F;G,H,I,J,K,T");
+            g.FindShortestPath("S", "T");
+            Assert.Equal(0, s.Region);
+            Assert.True(g.FindVertex("D").Value.InEdges.First().HasArcFlag(1));
+
+            Assert.Equal("(none)", default(Vertex).ToString());
+            Assert.Equal("(none)", default(Edge).ToString());
+        }
+
+        [Fact]
         public void NewQuery_DoesNotShowDistancesOfThePreviousQuery()
         {
             // Distances are only valid for the current query (no reset of all vertices any more)
@@ -636,6 +666,8 @@ namespace Eppstein.Tests
                 "a 1 3 20\n"));
             Assert.Equal(3, count);
             Assert.Equal(new long[] { 10, 20 }, Take(g, "V1", "V3", 5).Select(p => p.Weight));
+            // Any white space separates values (found by fuzzing: "\r " crashed the Go import)
+            Assert.Equal(1, new Graph().ImportDimacs(new StringReader("\r \n\u2000\np\vsp 2 1\r\na\f1\u20002\t3\r\n")));
             Assert.Equal(0, g.GetVertexIndex("V1"));
 
             Func<string, string> error = text => Assert.Throws<FormatException>(() => new Graph().ImportDimacs(new StringReader(text))).Message;

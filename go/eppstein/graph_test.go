@@ -671,6 +671,10 @@ func TestImportDimacsReadsGraphAndReportsErrorsWithLineNumber(t *testing.T) {
 	if w := weights(take(g, "V1", "V3", 5)); !equalInts(w, []int64{10, 20}) {
 		t.Fatalf("weights = %v", w)
 	}
+	// any white space separates values (found by fuzzing: "\r " crashed the import)
+	if count, err := NewGraph().ImportDimacs(strings.NewReader("\r \n\u2000\np\vsp 2 1\r\na\f1\u20002\t3\r\n")); err != nil || count != 1 {
+		t.Fatalf("white space: %d, %v", count, err)
+	}
 	if g.VertexIndex("V1") != 0 {
 		t.Fatal("V1 is not vertex 0")
 	}
