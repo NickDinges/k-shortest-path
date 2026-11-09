@@ -23,8 +23,9 @@ blue and green. The number under each letter is the distance from that point to 
 7. [Things to know (common pitfalls)](#7-things-to-know-common-pitfalls)
 8. [Speeding up repeated queries: arc flags](#8-speeding-up-repeated-queries-arc-flags)
 9. [How the algorithm works](#9-how-the-algorithm-works)
-10. [Project layout and tests](#10-project-layout-and-tests)
-11. [Further reading](#11-further-reading)
+10. [Performance](#10-performance)
+11. [Project layout and tests](#11-project-layout-and-tests)
+12. [Further reading](#12-further-reading)
 
 ---
 
@@ -161,7 +162,7 @@ That's it. The pattern is always the same:
 | **Graph** | A network of points and connections. | `Graph` |
 | **Vertex** (node) | A point in the network: a city, a router, a state. | Created by name with `CreateVertices` |
 | **Edge** (arc) | A **one-way** connection from one vertex to another. For a two-way road, create two edges. | `Edge`, created with `CreateEdges` |
-| **Weight** | The cost of using an edge: distance, time, price… Whole numbers. | `Edge.Weight` |
+| **Weight** | The cost of using an edge: distance, time, price… Whole numbers of type `long` (up to about 9.2 × 10¹⁸). | `Edge.Weight` |
 | **Group** | A name you give to edges, so you can change all their weights at once. | `EdgeGroupWeights` |
 | **Path** (route) | A chain of edges from the start to the goal. | `Path` |
 | **Path weight** | The sum of all edge weights in the path. "Shortest" means "smallest total weight". | `Path.Weight` |
@@ -281,8 +282,9 @@ g.EdgeGroupWeights("train", 1);    // turn them back on
 **5. Changing the graph means asking again.** After `CreateEdges` or `EdgeGroupWeights`, call
 `FindShortestPath` again. Until then, `FindNextShortestPath` returns empty paths.
 
-**6. Equal weights come in no particular order.** If two paths have the same total weight, either
-one may come first.
+**6. Equal weights come in no guaranteed order.** If two paths have the same total weight, either
+one may come first. The order is the same every time you run the same program, but it may differ
+between versions of the library (and between the C# and the Go version).
 
 **7. Name clash with `System.IO.Path`.** .NET has its own class called `Path`, for file paths.
 New projects (`dotnet new console`) import it automatically, so `Path p = ...` fails with
@@ -293,6 +295,17 @@ using Path = Eppstein.Path;
 ```
 
 Or write `Eppstein.Path` instead of `Path`.
+
+**8. Weights are `long`, not `int`.** Weights and distances are 64-bit numbers, so very large
+weights (for example distances in millimeters) work. Passing an `int` is fine
+(`CreateEdges("A", "B", 5, "x")`), but reading a weight into an `int` variable does not compile:
+
+```csharp
+long w = path.Weight;   // or: var w = path.Weight;
+int  x = path.Weight;   // error CS0266: cannot convert 'long' to 'int'
+```
+
+The total weight of a path must still fit into a `long`; there is no overflow check.
 
 ## 8. Speeding up repeated queries: arc flags
 
@@ -354,7 +367,34 @@ You don't need this to use the library, but here's the intuition.
    added. Detours never make a path shorter, so paths come out in the right order. Only what is
    needed is computed, which is why graphs with cycles work.
 
-## 10. Project layout and tests
+## 10. Performance
+
+The library handles graphs with millions of edges. Measured on grid graphs (each vertex connected
+to its right and lower neighbor, every 10th vertex also back to the left, random weights 1–100),
+searching from one corner to the opposite one, in Release mode on a 4-core cloud VM:
+
+| Vertices | Edges | Build graph | First path | Next 10,000 paths |
+|---|---|---|---|---|
+| 2,500 | 5,100 | 32 ms | 11 ms | 158 ms |
+| 10,000 | 20,700 | 49 ms | 15 ms | 180 ms |
+| 40,000 | 83,400 | 175 ms | 35 ms | 371 ms |
+| 160,000 | 334,800 | 641 ms | 159 ms | 873 ms |
+| 1,000,000 | 2,097,000 | 5.1 s | 1.5 s | 1.8 s |
+
+What makes it fast:
+
+- **Vertex lookup by name** uses a dictionary, so adding an edge takes constant time.
+- **Priority queues** are binary heaps (O(log n) per operation).
+- **Candidate paths share memory:** each candidate stores only its parent and one extra detour,
+  instead of a copy of all its detours.
+
+Run the benchmark yourself (sizes are grid widths, `--k` the number of paths):
+
+```sh
+dotnet run -c Release --project Eppstein2.Benchmarks -- 50 100 200 --k 10000
+```
+
+## 11. Project layout and tests
 
 | File | Content |
 |---|---|
@@ -362,9 +402,10 @@ You don't need this to use the library, but here's the intuition.
 | `Eppstein2/Graph.ArcFlags.cs` | Optional arc-flags speed-up |
 | `Eppstein2/Graph.Serialize.cs` | Graphviz (DOT) output |
 | `Eppstein2/GraphElements.cs` | `Vertex`, `Edge` and `Path` classes |
-| `Eppstein2/PriorityQueue.cs` | Sorted queue used by the algorithm |
+| `Eppstein2/PriorityQueue.cs` | Priority queue (binary heap) used by the algorithm |
 | `Eppstein2/Program.cs` | Demo program (`dotnet run --project Eppstein2 -- [k] [--dot file]`) |
 | `Eppstein2.Tests/` | Automated tests (xUnit) |
+| `Eppstein2.Benchmarks/` | Timing benchmark (see section 10) |
 | `docs/` | Images used in this README |
 | `go/` | Go port of the library ([own README](go/README.md)) |
 
@@ -376,7 +417,7 @@ dotnet test Eppstein2.sln    # run all tests
 The tests compare the results with a brute-force search on hundreds of random graphs (with and
 without cycles and arc flags). They also check the Eppstein example and the Graphviz output.
 
-## 11. Further reading
+## 12. Further reading
 
 - David Eppstein, *Finding the k Shortest Paths*, SIAM Journal on Computing, 1998:
   [paper (PDF)](http://www.ics.uci.edu/~eppstein/pubs/Epp-SJC-98.pdf).

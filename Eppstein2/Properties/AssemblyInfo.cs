@@ -19,6 +19,9 @@ using System.Runtime.InteropServices;
 // COM, set the ComVisible attribute to true on that type.
 [assembly: ComVisible(false)]
 
+// Unit tests may access internal members (e.g. the priority queue)
+[assembly: InternalsVisibleTo("Eppstein2.Tests")]
+
 // Version information for an assembly consists of the following four values:
 //
 //      Major Version

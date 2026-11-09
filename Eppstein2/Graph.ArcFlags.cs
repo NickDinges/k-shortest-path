@@ -299,11 +299,11 @@ namespace Eppstein
 
             foreach (Vertex _b in boundary)
             {
-                Dictionary<Vertex, int> dist = BackwardDistances(_b);
+                Dictionary<Vertex, long> dist = BackwardDistances(_b);
                 int region = _b.Region;
                 foreach (Edge _e in arcs)
                 {
-                    int dTail, dHead;
+                    long dTail, dHead;
                     if (_e.Weight >= 0 &&
                         dist.TryGetValue(_e.Tail, out dTail) &&
                         dist.TryGetValue(_e.Head, out dHead) &&
@@ -317,9 +317,9 @@ namespace Eppstein
         /// </summary>
         /// <param name="_target">Target vertex</param>
         /// <returns>Distance to target for every vertex that can reach it</returns>
-        private Dictionary<Vertex, int> BackwardDistances(Vertex _target)
+        private Dictionary<Vertex, long> BackwardDistances(Vertex _target)
         {
-            Dictionary<Vertex, int> dist = new Dictionary<Vertex, int>();
+            Dictionary<Vertex, long> dist = new Dictionary<Vertex, long>();
             PriorityQueue<SP_Node> fringe = new PriorityQueue<SP_Node>(this.Vertices.Count);
             dist[_target] = 0;
             Vertex v = _target;
@@ -328,7 +328,7 @@ namespace Eppstein
             {
                 if (v != null)
                 {
-                    int dv = dist[v];
+                    long dv = dist[v];
                     foreach (Edge _e in v.RelatedEdges)
                         if (_e.Head == v && _e.Weight >= 0 && !dist.ContainsKey(_e.Tail))
                             fringe.Enqueue(new SP_Node(_e, _e.Weight + dv));

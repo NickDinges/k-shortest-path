@@ -40,25 +40,31 @@ func take(g *Graph, s, t string, k int) []Path {
 	return result
 }
 
-func weights(paths []Path) []int {
-	w := make([]int, len(paths))
+func weights(paths []Path) []int64 {
+	w := make([]int64, len(paths))
 	for i, p := range paths {
 		w[i] = p.Weight()
 	}
 	return w
 }
 
-func equalInts(a, b []int) bool {
+func equalInts(a, b []int64) bool {
 	return fmt.Sprint(a) == fmt.Sprint(b)
 }
 
-type testEdge struct{ from, to, weight int }
+type testEdge struct {
+	from, to int
+	weight   int64
+}
 
 // bruteForceWalkWeights returns the weights of all s-t walks (repeated vertices allowed)
 // up to maxWeight, sorted.
-func bruteForceWalkWeights(edges []testEdge, s, t, maxWeight int) []int {
-	var result []int
-	type state struct{ vertex, weight int }
+func bruteForceWalkWeights(edges []testEdge, s, t int, maxWeight int64) []int64 {
+	var result []int64
+	type state struct {
+		vertex int
+		weight int64
+	}
 	stack := []state{{s, 0}}
 	for len(stack) > 0 {
 		cur := stack[len(stack)-1]
@@ -72,7 +78,7 @@ func bruteForceWalkWeights(edges []testEdge, s, t, maxWeight int) []int {
 			}
 		}
 	}
-	sort.Ints(result)
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
 	return result
 }
 
@@ -99,10 +105,10 @@ func TestEppsteinExampleFirstPathsMatchReference(t *testing.T) {
 	paths := take(eppsteinExample(), "S", "T", len(expected))
 
 	// Order among equal weights is not specified: compare weights in order, paths as sets
-	var expectedWeights []int
+	var expectedWeights []int64
 	want := map[string]bool{}
 	for _, x := range expected {
-		var w int
+		var w int64
 		fmt.Sscan(x[strings.Index(x, ":")+1:], &w)
 		expectedWeights = append(expectedWeights, w)
 		want[x] = true
@@ -122,7 +128,7 @@ func TestCyclicGraphTerminatesAndRepeatsCycle(t *testing.T) {
 	g.CreateVertices("S,A,B,T")
 	g.CreateEdges("S,A,B,A", "A,B,A,T", 1, "g") // A <-> B cycle
 	paths := take(g, "S", "T", 5)
-	if !equalInts(weights(paths), []int{2, 4, 6, 8, 10}) {
+	if !equalInts(weights(paths), []int64{2, 4, 6, 8, 10}) {
 		t.Fatalf("weights = %v", weights(paths))
 	}
 	if paths[1].VertexNames() != "S,A,B,A,T" {
@@ -191,7 +197,7 @@ func TestRandomCyclicGraphsMatchBruteForce(t *testing.T) {
 			for i := 0; i < n; i++ {
 				for j := 0; j < n; j++ {
 					if rnd.Float64() < 0.3 {
-						edges = append(edges, testEdge{i, j, 1 + rnd.Intn(9)})
+						edges = append(edges, testEdge{i, j, int64(1 + rnd.Intn(9))})
 					}
 				}
 			}
@@ -211,7 +217,7 @@ func TestRandomCyclicGraphsMatchBruteForce(t *testing.T) {
 			}
 			expected := bruteForceWalkWeights(edges, s, target, maxWeight)
 			paths := take(g, labels[s], labels[target], len(expected)+1)
-			var actual []int
+			var actual []int64
 			for _, p := range paths {
 				assertValidPath(t, p, labels[s], labels[target])
 				if p.Weight() <= maxWeight {
@@ -260,6 +266,90 @@ func TestArcFlagsInvalidPartitionRejectedAndDisable(t *testing.T) {
 	g.DisableArcFlags()
 	if g.ArcFlagsRegionCount() != 0 {
 		t.Fatal("regions after disable")
+	}
+}
+
+func TestLargeWeightsBeyondInt32AreSupported(t *testing.T) {
+	const big int64 = 3_000_000_000 // larger than math.MaxInt32
+	g := NewGraph()
+	g.CreateVertices("S,A,B,T")
+	g.CreateEdges("S,A", "A,T", big, "far")
+	g.CreateEdges("S,B", "B,T", big+1, "far2")
+	if w := weights(take(g, "S", "T", 3)); !equalInts(w, []int64{2 * big, 2*big + 2}) {
+		t.Fatalf("weights = %v", w)
+	}
+	if !strings.Contains(g.Serialize(), `label="3000000000"`) {
+		t.Error("large weight missing in DOT output")
+	}
+	g.EdgeGroupWeights("far", 5_000_000_000)
+	if w := g.FindShortestPath("S", "T").Weight(); w != 2*big+2 {
+		t.Fatalf("weight after change = %d", w)
+	}
+}
+
+func TestVertexLookupCaseInsensitiveAndRecreatedWithVertices(t *testing.T) {
+	g := NewGraph()
+	g.CreateVertices("Home,Work")
+	if !g.CreateEdges("home", "WORK", 1, "x") {
+		t.Fatal("edge rejected")
+	}
+	if p := g.FindShortestPath("hOmE", "work"); p.VertexNames() != "HOME,WORK" {
+		t.Fatalf("path = %s", p.VertexNames())
+	}
+	g.CreateVertices("Other") // old vertices must no longer be found
+	if g.CreateEdges("HOME", "OTHER", 1, "x") || g.FindShortestPath("HOME", "OTHER").IsValid() {
+		t.Fatal("removed vertex still found")
+	}
+}
+
+func TestZeroValueGraphIsUsable(t *testing.T) {
+	var g Graph // without NewGraph
+	g.CreateVertices("A,B")
+	g.CreateEdges("A", "B", 1, "x")
+	if !g.FindShortestPath("A", "B").IsValid() {
+		t.Fatal("no path in zero value graph")
+	}
+	var h Graph
+	if h.CreateEdges("A", "B", 1, "x") || h.FindShortestPath("A", "B").IsValid() {
+		t.Fatal("empty zero value graph returned something")
+	}
+}
+
+func TestPriorityQueueSortedAndStableForTies(t *testing.T) {
+	rnd := rand.New(rand.NewSource(7))
+	q := newPriorityQueue[int](0)
+	type item struct {
+		id     int
+		weight int64
+	}
+	var items []item
+	for i := 0; i < 2000; i++ {
+		w := int64(rnd.Intn(50))
+		items = append(items, item{i, w})
+		q.Enqueue(i, w)
+	}
+	sort.SliceStable(items, func(a, b int) bool { return items[a].weight < items[b].weight })
+	for _, want := range items {
+		id, w, ok := q.Dequeue()
+		if !ok || id != want.id || w != want.weight {
+			t.Fatalf("got %d/%d, want %d/%d", id, w, want.id, want.weight)
+		}
+	}
+	if _, _, ok := q.Dequeue(); ok {
+		t.Fatal("queue not empty")
+	}
+}
+
+func TestSidetrackChainRebuildsFullList(t *testing.T) {
+	g := eppsteinExample()
+	e := g.FindShortestPath("S", "T")[0]
+	root := &stNode{}
+	child := &stNode{parent: &stNode{parent: root, sidetrack: e}, sidetrack: e}
+	if got := child.sidetracks(); len(got) != 2 || got[0] != e || got[1] != e {
+		t.Fatalf("sidetracks = %v", got)
+	}
+	if len(root.sidetracks()) != 0 {
+		t.Fatal("root has sidetracks")
 	}
 }
 

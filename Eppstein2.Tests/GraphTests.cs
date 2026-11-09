@@ -85,7 +85,7 @@ namespace Eppstein2.Tests
             };
             List<Path> paths = Take(EppsteinExample(), "S", "T", expected.Length);
             // Order among equal weights is not specified: compare weights in order, paths as sets
-            Assert.Equal(expected.Select(x => int.Parse(x.Split(':')[1])), paths.Select(p => p.Weight));
+            Assert.Equal(expected.Select(x => long.Parse(x.Split(':')[1])), paths.Select(p => p.Weight));
             Assert.Equal(new HashSet<string>(expected), new HashSet<string>(paths.Select(p => p.VertexNames + ":" + p.Weight)));
         }
 
@@ -96,7 +96,7 @@ namespace Eppstein2.Tests
             g.CreateVertices("S,A,B,T");
             g.CreateEdges("S,A,B,A", "A,B,A,T", 1, "g");  // A <-> B cycle used to recurse forever
             List<Path> paths = Take(g, "S", "T", 5);
-            Assert.Equal(new[] { 2, 4, 6, 8, 10 }, paths.Select(p => p.Weight));
+            Assert.Equal(new long[] { 2, 4, 6, 8, 10 }, paths.Select(p => p.Weight));
             Assert.Equal("S,A,B,A,T", paths[1].VertexNames);
         }
 
@@ -143,8 +143,8 @@ namespace Eppstein2.Tests
                 foreach (Path p in paths)
                     AssertValidPath(p, labels[s], labels[t]);
 
-                List<int> actual = paths.Select(p => p.Weight).TakeWhile(w => w <= maxWeight).ToList();
-                Assert.Equal(expected, actual);
+                List<long> actual = paths.Select(p => p.Weight).TakeWhile(w => w <= maxWeight).ToList();
+                Assert.Equal(expected.Select(w => (long)w), actual);
             }
         }
 
@@ -174,6 +174,74 @@ namespace Eppstein2.Tests
             Assert.True(g.EnableArcFlags(2));
             g.DisableArcFlags();
             Assert.Equal(0, g.ArcFlagsRegionCount);
+        }
+
+        [Fact]
+        public void LargeWeights_BeyondInt32_AreSupported()
+        {
+            const long big = 3000000000L;  // larger than int.MaxValue
+            Graph g = new Graph();
+            g.CreateVertices("S,A,B,T");
+            g.CreateEdges("S,A", "A,T", big, "far");
+            g.CreateEdges("S,B", "B,T", big + 1, "far2");
+            List<Path> paths = Take(g, "S", "T", 3);
+            Assert.Equal(new[] { 2 * big, 2 * big + 2 }, paths.Select(p => p.Weight));
+            Assert.Contains("label=\"3000000000\"", g.Serialize());
+
+            g.EdgeGroupWeights("far", 5000000000L);
+            Assert.Equal(2 * big + 2, g.FindShortestPath("S", "T").Weight);
+        }
+
+        [Fact]
+        public void VertexLookup_IsCaseInsensitive_AndRecreatedWithVertices()
+        {
+            Graph g = new Graph();
+            g.CreateVertices("Home,Work");
+            Assert.True(g.CreateEdges("home", "WORK", 1, "x"));
+            Assert.Equal("HOME,WORK", g.FindShortestPath("hOmE", "work").VertexNames);
+
+            g.CreateVertices("Other");  // Old vertices must no longer be found
+            Assert.False(g.CreateEdges("HOME", "OTHER", 1, "x"));
+            Assert.False(g.FindShortestPath("HOME", "OTHER").IsValid);
+        }
+
+        [Fact]
+        public void PriorityQueue_ReturnsElementsSorted_AndStableForTies()
+        {
+            Random rnd = new Random(7);
+            PriorityQueue<SP_Node> queue = new PriorityQueue<SP_Node>(0);
+            List<SP_Node> nodes = new List<SP_Node>();
+            for (int i = 0; i < 2000; i++)
+            {
+                SP_Node node = new SP_Node(null, rnd.Next(0, 50));
+                nodes.Add(node);
+                queue.Enqueue(node);
+                if (i % 7 == 0)  // Interleave dequeues
+                    nodes.Remove(queue.Dequeue());
+            }
+            Assert.Equal(nodes.Min(n => n.Weight), queue.Root().Weight);
+            List<SP_Node> expected = nodes.OrderBy(n => n.Weight).ToList();  // OrderBy is stable
+            List<SP_Node> actual = new List<SP_Node>();
+            while (queue.Count > 0)
+                actual.Add(queue.Dequeue());
+            Assert.Equal(expected, actual);
+            Assert.Null(queue.Dequeue());
+        }
+
+        [Fact]
+        public void SidetrackChain_RebuildsFullCollection()
+        {
+            Graph g = EppsteinExample();
+            g.FindShortestPath("S", "T");
+            Edge first = g.FindShortestPath("S", "T")[0];
+            Path root = new Path();
+            root.Add(first);
+            ST_Node rootNode = new ST_Node(root);
+            ST_Node child = new ST_Node(new ST_Node(rootNode, first), first);
+            Assert.Equal(new[] { first, first, first }, child.Sidetracks);
+            Assert.Equal(3 * first.Delta, child.Weight);
+            Assert.Same(first.Head, child.LastHead);
+            Assert.Null(new ST_Node(new Path()).LastHead);
         }
 
         [Fact]

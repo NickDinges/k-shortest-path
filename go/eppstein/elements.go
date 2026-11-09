@@ -8,7 +8,7 @@ import (
 
 // Unreached is the value of Vertex.Distance for vertices whose distance to the
 // endpoint has not been calculated (or that cannot reach the endpoint).
-const Unreached = math.MinInt
+const Unreached int64 = math.MinInt64
 
 // Vertex is a simple vertex with a label.
 type Vertex struct {
@@ -20,7 +20,7 @@ type Vertex struct {
 	// EdgeToPath points to the edge in the shortest path tree.
 	EdgeToPath *Edge
 	// Distance to endpoint in shortest path calculation, Unreached if unknown.
-	Distance int
+	Distance int64
 	// RelatedEdges contains incoming and outgoing edges of the vertex.
 	RelatedEdges []*Edge
 	// Region of the vertex for the arc-flags optimization, -1 if not assigned.
@@ -63,7 +63,7 @@ type Edge struct {
 	// Head is the end vertex.
 	Head *Vertex
 	// Weight of the edge, negative edges are ignored by the algorithm.
-	Weight int
+	Weight int64
 	// Group label of the edge.
 	Group string
 
@@ -73,13 +73,13 @@ type Edge struct {
 }
 
 // NewEdge creates a directional edge from tail to head.
-func NewEdge(tail, head *Vertex, weight int, group string) *Edge {
+func NewEdge(tail, head *Vertex, weight int64, group string) *Edge {
 	return &Edge{Tail: tail, Head: head, Weight: weight, Group: group}
 }
 
 // Delta returns the sidetrack delta (deviation from shortest path).
 // Only valid when the shortest path tree has been calculated.
-func (e *Edge) Delta() int {
+func (e *Edge) Delta() int64 {
 	return e.Weight + e.Head.Distance - e.Tail.Distance
 }
 
@@ -99,7 +99,7 @@ func (e *Edge) IsSidetrackOf(v *Vertex) bool {
 
 // String returns tail and head labels with the weight, e.g. "A--5-->B".
 func (e *Edge) String() string {
-	return e.Tail.String() + "--" + strconv.Itoa(e.Weight) + "-->" + e.Head.String()
+	return e.Tail.String() + "--" + strconv.FormatInt(e.Weight, 10) + "-->" + e.Head.String()
 }
 
 // Path is a path composed by a sequence of edges.
@@ -125,8 +125,8 @@ func (p Path) VertexNames() string {
 }
 
 // Weight returns the sum of all edge weights of the path.
-func (p Path) Weight() int {
-	total := 0
+func (p Path) Weight() int64 {
+	var total int64
 	for _, e := range p {
 		total += e.Weight
 	}
@@ -134,8 +134,8 @@ func (p Path) Weight() int {
 }
 
 // DeltaWeight returns the sum of all edge deltas of the path.
-func (p Path) DeltaWeight() int {
-	total := 0
+func (p Path) DeltaWeight() int64 {
+	var total int64
 	for _, e := range p {
 		total += e.Delta()
 	}
@@ -149,7 +149,7 @@ func (p Path) String() string {
 	}
 	parts := make([]string, len(p))
 	for i, e := range p {
-		parts[i] = strconv.Itoa(e.Delta())
+		parts[i] = strconv.FormatInt(e.Delta(), 10)
 	}
 	return strings.Join(parts, ",")
 }

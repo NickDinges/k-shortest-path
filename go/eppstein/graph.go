@@ -17,17 +17,37 @@ import (
 	"unicode"
 )
 
-// stNode is a track (path) described only by its sidetracks.
+// stNode is a track (path) described only by its sidetracks. It stores its parent
+// (same sidetracks without the last one) and one sidetrack, so creating a candidate
+// costs O(1) time and memory instead of copying the whole sidetrack list.
 type stNode struct {
-	sidetracks Path
+	parent    *stNode // nil for the root (shortest path, no sidetracks)
+	sidetrack *Edge   // last sidetrack, nil for the root
+	weight    int64   // sum of sidetrack deltas
+}
+
+// sidetracks builds the full sidetrack list from the chain of parent nodes.
+func (n *stNode) sidetracks() Path {
+	count := 0
+	for x := n; x.sidetrack != nil; x = x.parent {
+		count++
+	}
+	result := make(Path, count)
+	for x := n; x.sidetrack != nil; x = x.parent {
+		count--
+		result[count] = x.sidetrack
+	}
+	return result
 }
 
 // Graph is a directed graph, composed by vertices and directed edges.
 type Graph struct {
 	// vertices in creation order
 	vertices []*Vertex
+	// vertexIndex finds vertices by (upper case) label in constant time
+	vertexIndex map[string]*Vertex
 	// pathsHeap holds candidate tracks ordered by total delta
-	pathsHeap *priorityQueue[stNode]
+	pathsHeap *priorityQueue[*stNode]
 	// ready tells if shortest paths have been calculated for current graph
 	ready bool
 	// sourceVertex and endVertex are valid after FindShortestPath
@@ -39,7 +59,7 @@ type Graph struct {
 
 // NewGraph creates an empty graph.
 func NewGraph() *Graph {
-	return &Graph{}
+	return &Graph{vertexIndex: map[string]*Vertex{}}
 }
 
 // CreateVertices creates all vertices of the graph from a comma-separated list of labels,
@@ -48,8 +68,9 @@ func NewGraph() *Graph {
 // converted to upper case. Repeated and empty labels are ignored.
 // It returns false if a label is invalid.
 func (g *Graph) CreateVertices(vertices string) bool {
-	g.ready = false   // must rebuild trees
-	g.vertices = nil  // remove all previous vertices
+	g.ready = false  // must rebuild trees
+	g.vertices = nil // remove all previous vertices
+	g.vertexIndex = map[string]*Vertex{}
 	g.resetArcFlags() // partition refers to removed vertices
 
 	for _, label := range strings.Split(strings.ToUpper(vertices), ",") {
@@ -62,7 +83,9 @@ func (g *Graph) CreateVertices(vertices string) bool {
 			}
 		}
 		if g.getVertex(label) == nil {
-			g.vertices = append(g.vertices, NewVertex(label))
+			v := NewVertex(label)
+			g.vertices = append(g.vertices, v)
+			g.vertexIndex[label] = v
 		}
 	}
 	return true
@@ -71,7 +94,7 @@ func (g *Graph) CreateVertices(vertices string) bool {
 // CreateEdges creates directional edges from tails to heads (comma-separated lists of
 // labels, paired by position), all with the same weight and group.
 // It returns false if a vertex does not exist or the lists have different lengths.
-func (g *Graph) CreateEdges(tails, heads string, weight int, group string) bool {
+func (g *Graph) CreateEdges(tails, heads string, weight int64, group string) bool {
 	tailList := g.parseVertices(tails)
 	headList := g.parseVertices(heads)
 	if tailList == nil || headList == nil || len(tailList) != len(headList) {
@@ -92,7 +115,7 @@ func (g *Graph) CreateEdges(tails, heads string, weight int, group string) bool 
 }
 
 // EdgeGroupWeights sets the weight of all edges of a group.
-func (g *Graph) EdgeGroupWeights(group string, weight int) {
+func (g *Graph) EdgeGroupWeights(group string, weight int64) {
 	group = strings.ToUpper(group)
 	for _, v := range g.vertices {
 		for _, e := range v.RelatedEdges {
@@ -142,8 +165,8 @@ func (g *Graph) FindNextShortestPath() Path {
 		return Path{}
 	}
 	// Lazy expansion: enqueues all tracks having this one as prefix plus one sidetrack
-	g.addSidetracks(node.sidetracks)
-	return g.rebuildPath(node.sidetracks)
+	g.addSidetracks(node)
+	return g.rebuildPath(node.sidetracks())
 }
 
 // parseVertices parses a comma-separated list of labels, nil if a vertex does not exist.
@@ -164,12 +187,10 @@ func (g *Graph) getVertex(label string) *Vertex {
 	if label == "" {
 		return nil
 	}
-	for _, v := range g.vertices {
-		if v.Equals(label) {
-			return v
-		}
+	if g.vertexIndex == nil { // zero value Graph{} instead of NewGraph()
+		g.vertexIndex = map[string]*Vertex{}
 	}
-	return nil
+	return g.vertexIndex[strings.ToUpper(label)]
 }
 
 // resetGraphState clears shortest path tree pointers and distances.
@@ -193,7 +214,8 @@ func (g *Graph) buildShortestPathTree() {
 	for {
 		if v != nil {
 			for _, e := range v.RelatedEdges { // evaluate all incoming edges
-				if e.Head == v && e.Weight >= 0 && e.HasArcFlag(targetRegion) {
+				// skip negative edges, settled tails and arcs pruned by arc flags
+				if e.Head == v && e.Weight >= 0 && e.Tail.Distance == Unreached && e.HasArcFlag(targetRegion) {
 					fringe.Enqueue(e, e.Weight+e.Head.Distance)
 				}
 			}
@@ -215,27 +237,25 @@ func (g *Graph) buildShortestPathTree() {
 
 // buildSidetracksHeap initializes the heap with the shortest path (no sidetracks).
 func (g *Graph) buildSidetracksHeap() {
-	g.pathsHeap = newPriorityQueue[stNode](len(g.vertices))
-	g.pathsHeap.Enqueue(stNode{sidetracks: Path{}}, 0)
+	g.pathsHeap = newPriorityQueue[*stNode](len(g.vertices))
+	g.pathsHeap.Enqueue(&stNode{}, 0)
 }
 
 // addSidetracks enqueues all children of a track: the same sidetracks plus one more,
 // taken from a vertex of the shortest path tree between the head of the last sidetrack
 // (or s) and t. Every track has a unique parent, so each path is generated once; deltas
 // are non-negative, so children never come before their parent.
-func (g *Graph) addSidetracks(p Path) {
+func (g *Graph) addSidetracks(node *stNode) {
 	v := g.sourceVertex
-	if len(p) > 0 {
-		v = p[len(p)-1].Head
+	if node.sidetrack != nil {
+		v = node.sidetrack.Head
 	}
 	// Walks shortest path tree from v to t (tree paths are simple, so this terminates)
 	for ; v != nil; v = v.Next() {
 		for _, e := range v.RelatedEdges {
 			if e.IsSidetrackOf(v) && (e.Head.EdgeToPath != nil || e.Head == g.endVertex) {
-				child := make(Path, len(p), len(p)+1)
-				copy(child, p)
-				child = append(child, e)
-				g.pathsHeap.Enqueue(stNode{sidetracks: child}, child.DeltaWeight())
+				child := &stNode{parent: node, sidetrack: e, weight: node.weight + e.Delta()}
+				g.pathsHeap.Enqueue(child, child.weight) // O(1): no copy of sidetracks
 			}
 		}
 	}
