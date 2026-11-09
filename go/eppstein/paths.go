@@ -222,6 +222,7 @@ func (g *Graph) startQuery(start, goal int) bool {
 	}
 	g.ensureAdjacency()
 	g.ensureArcFlags()
+	g.ensureContractionHierarchy()
 	if len(g.stamp) < n { // new arrays; the stamps start over
 		size := max(n, 2*len(g.stamp))
 		g.stamp = make([]int32, size)
@@ -263,6 +264,10 @@ func (g *Graph) startQuery(start, goal int) bool {
 // ignored. With a maximum detour, the search stops at distance (shortest path + detour): farther
 // vertices cannot be part of any returned path.
 func (g *Graph) buildShortestPathTree() {
+	if g.usePhast() {
+		g.buildShortestPathTreePhast()
+		return
+	}
 	query := g.queryStamp
 	fringe := newPriorityQueue[int32](1024) // edges by distance of their tail to the goal
 	targetRegion := g.arcFlagsRegionOf(g.target)

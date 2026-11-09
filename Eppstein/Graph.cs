@@ -359,6 +359,7 @@ public sealed partial class Graph
         if (structure)
             adjacencyValid = false;
         InvalidateArcFlags();
+        chValid = false;
     }
 
     /// <summary>

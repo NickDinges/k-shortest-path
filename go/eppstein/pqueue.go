@@ -73,3 +73,12 @@ func (q *priorityQueue[T]) Dequeue() (value T, weight int64, ok bool) {
 	}
 	return top.value, top.weight, true
 }
+
+// Peek returns the weight of the lowest element without removing it, ok is false if the queue is
+// empty.
+func (q *priorityQueue[T]) Peek() (weight int64, ok bool) {
+	if len(q.items) == 0 {
+		return 0, false
+	}
+	return q.items[0].weight, true
+}

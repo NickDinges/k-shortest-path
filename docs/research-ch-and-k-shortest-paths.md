@@ -69,7 +69,8 @@ the related-work sections of the papers above) is needed before claiming novelty
 
 1. **No CH/CCH in the library for now.** The measured bottlenecks are elsewhere (number of spur
    searches) or already solved by the corridor; the cost (preprocessing, memory, two
-   implementations) is high.
+   implementations) is high. *Revised: CH with PHAST was implemented afterwards on request, see
+   "Implementation" below.*
 2. **Next performance step for simple paths: the sidetrack-based algorithm (Kurz & Mutzel) or PNC
    (Al Zoobi et al.).** It attacks bottleneck 1 directly by avoiding most spur searches, and it reuses
    the existing Eppstein machinery (tree, sidetracks, heaps).
@@ -82,3 +83,42 @@ the related-work sections of the papers above) is needed before claiming novelty
    CH-based trees make those updates faster. Prerequisites: the literature review above, and real
    road networks (DIMACS 9 `.gr`, OSM). Note: the DIMACS 9 server only serves plain HTTP, which the
    current cloud environment cannot reach; the data has to be downloaded elsewhere.
+
+## Implementation (November 2026)
+
+CH with PHAST for the shortest-path tree is now available as an option
+(`EnableContractionHierarchy`, C# and Go; README section 9). Design:
+
+- **Contraction:** lazy node ordering by priority = 2 × shortcuts − removed edges + contracted
+  neighbors (ties by vertex index, deterministic); witness searches with
+  a limit of 50 settled vertices while ordering and 500 while contracting (an incomplete search adds
+  the shortcut, which is always correct). Parallel edges keep the minimum; negative edges and
+  self-loops are ignored.
+- **Query (PHAST):** upward search from the goal over reversed downward edges, then one sweep in
+  descending rank over the upward edges, with the vertices stored by sweep position. The tree is
+  rebuilt from tight original edges, breadth-first from the goal (safe with zero-weight cycles).
+- **Scope:** only without a corridor (with a corridor, the bounded Dijkstra visits fewer vertices).
+  Any change of the graph, including weights, invalidates the hierarchy (no CCH). Arc flags are not
+  used while it is enabled. Yen's spur searches are unchanged.
+- **Tests:** distances, tree consistency and path weights against Dijkstra on random graphs with
+  zero/negative/parallel edges and unreachable vertices; all golden cases with CH; FsCheck property
+  and Go fuzzing with a CH option; a mutation check (no shortcuts) is caught.
+
+Measured (C#, .NET 10, Release; grids as in the README, repeated query = tree only):
+
+| Graph | Contraction | Shortcuts | Memory | Tree: Dijkstra → PHAST |
+|---|---|---|---|---|
+| 40,000 vertices, one-way | 1.4 s | 110,482 | 7 → 10 MB | 29 → 7 ms |
+| 40,000 vertices, two-way | 3.1 s | 179,064 | 8 → 13 MB | 41 → 4 ms |
+| 1,000,000 vertices, one-way | 76 s | 3,053,922 | 117 → 203 MB | 258 → 95 ms |
+| 1,000,000 vertices, two-way | 101 s | 4,684,586 | 149 → 268 MB | 384 → 136 ms |
+
+Go, 40,000-vertex one-way grid: contraction 1.2 s, tree 7.9 → 1.8 ms.
+
+Assessment: bottleneck 2 (full tree without corridor) improves by 3–10×, below the order of
+magnitude reported for PHAST on road networks: grids are a hard case for CH (many shortcuts), the
+sweep is single-threaded without SIMD, and the tree reconstruction is an extra pass over all edges.
+The preparation pays off after roughly 80 (40k two-way) to 400 (1M two-way) queries. Possible next
+steps: renumbering the vertices in sweep order for the whole query (better locality), better
+ordering (nested dissection, e.g. from the external partitioners already supported), CCH for
+weight changes, and real road networks instead of grids.

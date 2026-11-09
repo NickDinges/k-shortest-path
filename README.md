@@ -22,7 +22,7 @@ blue and green. The number under each letter is the distance from that point to 
 6. [Drawing your graph (Graphviz)](#6-drawing-your-graph-graphviz)
 7. [Things to know (common pitfalls)](#7-things-to-know-common-pitfalls)
 8. [Routes without loops: `SimplePathsOnly`](#8-routes-without-loops-simplepathsonly)
-9. [Faster queries: corridor and arc flags](#9-faster-queries-corridor-and-arc-flags)
+9. [Faster queries: corridor, arc flags and contraction hierarchy](#9-faster-queries-corridor-arc-flags-and-contraction-hierarchy)
 10. [How the algorithm works](#10-how-the-algorithm-works)
 11. [Performance](#11-performance)
 12. [Project layout and tests](#12-project-layout-and-tests)
@@ -298,8 +298,9 @@ or edge. That way the graph always knows when its prepared data is outdated.
 |---|---|---|
 | `Serialize(...)` | Produces a Graphviz drawing of the graph. | [6](#6-drawing-your-graph-graphviz) |
 | `SimplePathsOnly` | Only routes that visit no vertex twice (no loops); Yen's algorithm. | [8](#8-routes-without-loops-simplepathsonly) |
-| `MaxDetour`, `MaxDetourRatio` | Only paths at most this much longer than the shortest one (much faster on large graphs). | [9](#9-faster-queries-corridor-and-arc-flags) |
-| `EnableArcFlags(...)`, `EnableArcFlagsFromPartition(reader)`, `WriteMetisGraph(writer)`, `DisableArcFlags()`, `PrecomputeArcFlags()`, `ArcFlagsEnabled`, `ArcFlagsRegionCount` | Optional speed-up for many queries, also with regions from an external partitioner. | [9](#9-faster-queries-corridor-and-arc-flags) |
+| `MaxDetour`, `MaxDetourRatio` | Only paths at most this much longer than the shortest one (much faster on large graphs). | [9](#9-faster-queries-corridor-arc-flags-and-contraction-hierarchy) |
+| `EnableArcFlags(...)`, `EnableArcFlagsFromPartition(reader)`, `WriteMetisGraph(writer)`, `DisableArcFlags()`, `PrecomputeArcFlags()`, `ArcFlagsEnabled`, `ArcFlagsRegionCount` | Optional speed-up for many queries, also with regions from an external partitioner. | [9](#9-faster-queries-corridor-arc-flags-and-contraction-hierarchy) |
+| `EnableContractionHierarchy()`, `DisableContractionHierarchy()`, `PrecomputeContractionHierarchy()`, `ContractionHierarchyEnabled`, `ContractionHierarchyShortcuts` | Optional speed-up for many queries without a corridor on large graphs (PHAST). | [9](#9-faster-queries-corridor-arc-flags-and-contraction-hierarchy) |
 
 ## 6. Drawing your graph (Graphviz)
 
@@ -495,9 +496,9 @@ Measured on two-way grid streets with 1 million vertices, between two nearby poi
 - `EnumeratePathWeights` is not faster than `EnumeratePaths` in this mode (the paths are built
   anyway), and arc flags only speed up the first search.
 
-## 9. Faster queries: corridor and arc flags
+## 9. Faster queries: corridor, arc flags and contraction hierarchy
 
-Both are optional. The results never change, except that the corridor deliberately leaves out
+All three are optional. The results never change, except that the corridor deliberately leaves out
 paths that are too long.
 
 ### Corridor: only paths that are not much longer
@@ -613,6 +614,67 @@ Every arc `(u,v)` gets one flag per region `r`. The flag is set if the arc lies 
 from `u` to some vertex of `r`. To compute the flags, one backward Dijkstra runs from each boundary
 vertex of each region. A query then only relaxes arcs flagged for the region of the goal `t`.
 Every shortest path `u → t` uses only such arcs, so all distances stay exact.
+
+</details>
+
+### Contraction hierarchy: all distances much faster
+
+*For many queries **without** a corridor on large, unchanging graphs.*
+
+Every query starts with the distances of all vertices to the goal (step 1 in section 10). On a large
+graph without a corridor that is most of the time of a query. A **contraction hierarchy** prepares
+the graph once, so that these distances come out 3 to 10 times faster:
+
+```csharp
+g.EnableContractionHierarchy();
+g.PrecomputeContractionHierarchy();   // optional: prepare now instead of on the first query
+
+foreach (GraphPath p in g.EnumeratePaths("HOME", "OFFICE").Take(10))
+    Console.WriteLine(p);
+Console.WriteLine(g.ContractionHierarchyShortcuts + " shortcuts");
+```
+
+Measured on the benchmark grids (section 11, C#, results identical in all cases):
+
+| Graph | Preparation | Shortcuts | Memory | Distances to the goal (repeated query): without → with |
+|---|---|---|---|---|
+| 40,000 vertices, one-way | 1.4 s | 110,482 | 7 → 10 MB | 29 → **7 ms** |
+| 40,000 vertices, two-way | 3.1 s | 179,064 | 8 → 13 MB | 41 → **4 ms** |
+| 1,000,000 vertices, one-way | 76 s | 3,053,922 | 117 → 203 MB | 258 → **95 ms** |
+| 1,000,000 vertices, two-way | 101 s | 4,684,586 | 149 → 268 MB | 384 → **136 ms** |
+
+Good to know:
+
+- **It pays off only after many queries:** on the two-way grid with 1 million vertices, the
+  preparation costs as much as about 400 queries save. Use it for a fixed graph that answers many
+  questions (a server, a batch job).
+- **Any change of the graph** (also `SetEdgeWeight`, `EdgeGroupWeights`) repeats the whole
+  preparation on the next query. For graphs whose weights change often, leave it off.
+- **With a corridor** (`MaxDetour`, `MaxDetourRatio`) the library keeps using Dijkstra: the corridor
+  only visits the vertices near start and goal, while the hierarchy always computes all distances.
+  A corridor is usually the better choice anyway (section 11: 3 ms instead of 78 ms).
+- It speeds up the distances only. Finding the next paths (and the branch searches of
+  `SimplePathsOnly`) is unchanged. Arc flags are not used while it is enabled.
+- Results are exactly the same as without it; only paths of equal weight may come in another order.
+- `g.DisableContractionHierarchy()` switches it off and frees the memory.
+
+<details>
+<summary>Technical details</summary>
+
+The preparation removes ("contracts") the vertices one after the other, the least important first
+(chosen by how many shortcuts removing them would need). When a vertex `v` is removed, a
+**shortcut** `u → x` with weight `w(u,v) + w(v,x)` is added for each pair of neighbors whose
+shortest connection ran through `v`; a small Dijkstra search (witness search) checks whether there
+is another path that is as short. The order of removal is the vertex's *rank*. Every shortest path
+then has an equally long path over edges and shortcuts that first only goes up in rank, then only
+down ([Geisberger et al. 2008](#14-further-reading)).
+
+A query uses **PHAST** ([Delling et al.](#14-further-reading)): a small search from the goal over
+edges to higher-ranked vertices, then one linear sweep over all vertices from the highest to the
+lowest rank, without any priority queue. The vertices are stored in sweep order, so the sweep reads
+memory almost sequentially. Finally, the shortest-path tree is built from the original edges whose
+weight matches the distances (breadth-first from the goal, so edges of weight 0 cannot form a
+cycle). Negative (switched-off) edges and self-loops are ignored.
 
 </details>
 
@@ -744,19 +806,23 @@ What makes it fast:
 - **At most three candidates per path**, thanks to the persistent detour heaps (section 10).
   Candidates store only their parent and one detour, not a copy of all detours.
 - **The corridor** stops the shortest-path search where no allowed path can lie.
+- **Optional contraction hierarchy:** for many queries without a corridor, the distances of all
+  vertices come from one linear sweep (PHAST) instead of Dijkstra, 3 to 10 times faster (section 9).
 - **Simple paths:** Lawler's rule saves most branch searches, and the remaining ones run as A*
   towards the goal, guided by the distances that are already known (section 10).
 - **Edges are stored by direction**, so the searches never look at edges going the wrong way.
 
 Run the benchmark yourself (sizes are grid widths; `--k` = number of paths, `--local` = nearby
 vertices, `--ratio` = `MaxDetourRatio`, `--build strings|index|dimacs` = way of building,
-`--two-way` = every street in both directions, `--simple` = `SimplePathsOnly`):
+`--two-way` = every street in both directions, `--simple` = `SimplePathsOnly`, `--ch` = contraction
+hierarchy, its preparation time is written to standard error):
 
 ```sh
 dotnet run -c Release --project Eppstein.Benchmarks -- 50 100 200 --k 10000
 dotnet run -c Release --project Eppstein.Benchmarks -- 1000 --local --ratio 0.1
 dotnet run -c Release --project Eppstein.Benchmarks -- 1000 --build index
 dotnet run -c Release --project Eppstein.Benchmarks -- 100 200 --two-way --simple --k 100
+dotnet run -c Release --project Eppstein.Benchmarks -- 200 1000 --build index --ch
 ```
 
 ## 12. Project layout and tests
@@ -767,6 +833,7 @@ dotnet run -c Release --project Eppstein.Benchmarks -- 100 200 --two-way --simpl
 | `Eppstein/Graph.cs` | Storage, building the graph, vertices and edges |
 | `Eppstein/Graph.Paths.cs` | Queries: Dijkstra, corridor, path enumeration |
 | `Eppstein/Graph.ArcFlags.cs` | Optional arc-flags speed-up |
+| `Eppstein/Graph.ContractionHierarchy.cs` | Optional contraction hierarchy with PHAST |
 | `Eppstein/Graph.Import.cs` | CSV and DIMACS import |
 | `Eppstein/Graph.Serialize.cs` | Graphviz (DOT) output |
 | `Eppstein/Vertex.cs`, `Edge.cs`, `GraphPath.cs` | The public value types |
@@ -777,7 +844,7 @@ dotnet run -c Release --project Eppstein.Benchmarks -- 100 200 --two-way --simpl
 | `Eppstein.Benchmarks/` | Timing benchmark (see section 11) |
 | `testdata/golden/` | Graphs with expected paths, checked by the C# **and** the Go tests |
 | `.github/workflows/ci.yml` | CI: build, tests and a benchmark comparison for every pull request |
-| `docs/` | Images used in this README, and [an assessment of contraction hierarchies for this library](docs/research-ch-and-k-shortest-paths.md) |
+| `docs/` | Images used in this README, and [an assessment of contraction hierarchies for this library](docs/research-ch-and-k-shortest-paths.md) (with measurements of the implementation) |
 | `go/` | Go port of the library ([own README](go/README.md)) |
 
 ```sh
@@ -787,7 +854,8 @@ dotnet pack Eppstein/Eppstein.csproj -c Release -o artifacts   # build the NuGet
 ```
 
 The tests compare the results with a brute-force search on hundreds of random graphs (with and
-without cycles, corridors and arc flags), and check the shared golden data, the Graphviz output
+without cycles, corridors, arc flags and the contraction hierarchy; all golden cases also run with
+the contraction hierarchy), and check the shared golden data, the Graphviz output
 and the error handling. On top of that:
 
 - **Property-based tests** (`Eppstein.Tests/PropertyTests.cs`, with
@@ -839,6 +907,11 @@ Version 2 changed the interface. What to change in your code:
   The algorithm finds the k shortest paths, allowing repeated vertices and edges. After one
   shortest-path computation it needs only constant time per path. It is widely cited in route
   planning, network routing, computational linguistics and bioinformatics.
+- Robert Geisberger, Peter Sanders, Dominik Schultes, Daniel Delling, *Contraction Hierarchies:
+  Faster and Simpler Hierarchical Routing in Road Networks*, WEA 2008, and Daniel Delling, Andrew
+  V. Goldberg, Andreas Nowatzyk, Renato F. Werneck, *PHAST: Hardware-Accelerated Shortest Path
+  Trees*, JPDC 2013 ([paper](https://i11www.iti.kit.edu/extra/publications/dgnw-phast-12.pdf)):
+  the techniques behind `EnableContractionHierarchy`.
 - Jin Y. Yen, *Finding the k shortest loopless paths in a network*, Management Science, 1971, and
   Eugene L. Lawler, *A procedure for computing the k best solutions to discrete optimization
   problems and its application to the shortest path problem*, Management Science, 1972: the

@@ -53,7 +53,13 @@ namespace Eppstein.Tests
 
         [Theory]
         [MemberData(nameof(CaseNames))]
-        public void GoldenCase_MatchesExpectedPaths(string name)
+        public void GoldenCase_MatchesExpectedPaths(string name) => CheckGoldenCase(name, false);
+
+        [Theory]
+        [MemberData(nameof(CaseNames))]
+        public void GoldenCase_WithContractionHierarchy(string name) => CheckGoldenCase(name, true);
+
+        private static void CheckGoldenCase(string name, bool contractionHierarchy)
         {
             string dir = GoldenDirectory();
             GoldenCase c = JsonSerializer.Deserialize<List<GoldenCase>>(File.ReadAllText(System.IO.Path.Combine(dir, "cases.json")),
@@ -72,6 +78,8 @@ namespace Eppstein.Tests
             if (c.MaxDetourRatio.HasValue)
                 g.MaxDetourRatio = c.MaxDetourRatio.Value;
             g.SimplePathsOnly = c.SimplePathsOnly;
+            if (contractionHierarchy)
+                g.EnableContractionHierarchy();
 
             // Complete: all paths must come and then an empty path. Otherwise: all paths up to the
             // weight of the last expected one.
