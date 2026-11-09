@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
   pull_request:
+  schedule:
+    - cron: '17 3 * * 1'  # Mondays: longer fuzzing run
 
 permissions:
   contents: read
@@ -22,8 +24,18 @@ jobs:
             10.0.x
       - name: Build (warnings are errors)
         run: dotnet build Eppstein.sln -c Release
-      - name: Test
-        run: dotnet test Eppstein.sln -c Release --no-build
+      - name: Test (with coverage)
+        run: dotnet test Eppstein.sln -c Release --no-build --collect:"XPlat Code Coverage" --results-directory coverage
+      - name: Coverage summary (at least 95% of lines)
+        run: |
+          dotnet tool install -g dotnet-reportgenerator-globaltool
+          reportgenerator -reports:"coverage/*/coverage.cobertura.xml" -targetdir:coverage/report -reporttypes:MarkdownSummaryGithub
+          cat coverage/report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+          for report in coverage/*/coverage.cobertura.xml; do
+            rate=$(grep -o 'line-rate="[0-9.]*"' "$report" | head -1 | grep -o '[0-9.]*')
+            echo "Line coverage in $report: $rate"
+            python3 -c "import sys; sys.exit(0 if float('$rate') >= 0.95 else 1)" || { echo "::error::C# line coverage $rate is below 95%"; exit 1; }
+          done
       - name: Package
         run: dotnet pack Eppstein/Eppstein.csproj -c Release --no-build -o artifacts
 
@@ -50,8 +62,46 @@ jobs:
           if [ -n "$unformatted" ]; then echo "Not gofmt-formatted: $unformatted"; exit 1; fi
       - name: Vet
         run: go vet ./...
-      - name: Test (with race detector)
-        run: go test -race ./...
+      - name: Staticcheck
+        if: matrix.go == 'stable'
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          "$(go env GOPATH)/bin/staticcheck" ./...
+      - name: Test (with race detector and coverage, at least 93%)
+        run: |
+          go test -race -coverprofile=coverage.out ./eppstein
+          total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}')
+          echo "Go ${{ matrix.go }} statement coverage: $total" | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 -c "import sys; sys.exit(0 if float('${total%\%}') >= 93 else 1)" || { echo "::error::Go coverage $total is below 93%"; exit 1; }
+      - name: Test demo program
+        run: go test -race ./cmd/...
+
+  fuzz:
+    name: Go fuzzing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Fuzz each target (1 min per pull request, 10 min weekly)
+        run: |
+          fuzztime=60s
+          if [ "${{ github.event_name }}" = schedule ]; then fuzztime=10m; fi
+          for target in FuzzImportDimacs FuzzImportEdges FuzzKShortestPaths; do
+            echo "::group::$target"
+            go test -run '^$' -fuzz "^$target\$" -fuzztime "$fuzztime" ./eppstein
+            echo "::endgroup::"
+          done
+      - name: Upload failing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures
+          path: go/eppstein/testdata/fuzz
 
   benchmark:
     name: Benchmark comparison

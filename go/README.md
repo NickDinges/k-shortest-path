@@ -18,6 +18,7 @@ go run ./cmd/eppstein            # 20 shortest paths of the example graph from t
 go run ./cmd/eppstein 5          # only 5 paths
 go run ./cmd/eppstein 5 --dot graph.dot && dot -Tsvg graph.dot -o graph.svg
 go test ./...                    # run the tests
+go test -run '^$' -fuzz '^FuzzImportDimacs$' -fuzztime 1m ./eppstein   # fuzz one target
 ```
 
 ## Your first program
