@@ -28,6 +28,7 @@ namespace Eppstein.Tests
             public string To { get; set; }
             public long? MaxDetour { get; set; }
             public double? MaxDetourRatio { get; set; }
+            public bool SimplePathsOnly { get; set; }
             public bool Complete { get; set; }
             public List<GoldenPath> Paths { get; set; }
         }
@@ -70,6 +71,7 @@ namespace Eppstein.Tests
                 g.MaxDetour = c.MaxDetour.Value;
             if (c.MaxDetourRatio.HasValue)
                 g.MaxDetourRatio = c.MaxDetourRatio.Value;
+            g.SimplePathsOnly = c.SimplePathsOnly;
 
             // Complete: all paths must come and then an empty path. Otherwise: all paths up to the
             // weight of the last expected one.

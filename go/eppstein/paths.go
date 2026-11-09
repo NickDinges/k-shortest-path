@@ -121,11 +121,25 @@ func (g *Graph) FindShortestPathByIndex(start, goal int) Path {
 // Paths may repeat vertices and edges, so a graph with a cycle between start and goal has
 // infinitely many paths: limit the number of calls, or set a corridor (SetMaxDetour).
 func (g *Graph) FindNextShortestPath() Path {
+	p, _, _ := g.nextResult(true)
+	return p
+}
+
+// nextResult returns the next path of the current query, from Eppstein's enumeration or, with
+// SetSimplePathsOnly(true), from Yen's algorithm. With buildPath false, Eppstein only returns the
+// weight (faster). ok is false if there are no more paths or there is no current query.
+func (g *Graph) nextResult(buildPath bool) (p Path, weight int64, ok bool) {
+	if g.simpleOnly {
+		return g.nextSimplePath()
+	}
 	c := g.nextCandidate()
 	if c == nil {
-		return Path{}
+		return Path{}, 0, false
 	}
-	return g.buildPath(c)
+	if buildPath {
+		p = g.buildPath(c)
+	}
+	return p, g.distance[g.source] + c.weight, true
 }
 
 // Paths returns all paths from start to goal (labels) in order of weight, for use with range:
@@ -142,8 +156,8 @@ func (g *Graph) Paths(start, goal string) iter.Seq[Path] {
 // PathsByIndex is Paths for vertices given by index.
 func (g *Graph) PathsByIndex(start, goal int) iter.Seq[Path] {
 	return func(yield func(Path) bool) {
-		for c := range g.candidateSeq(start, goal) {
-			if !yield(g.buildPath(c)) {
+		for r := range g.resultSeq(start, goal, true) {
+			if !yield(r.path) {
 				return
 			}
 		}
@@ -159,16 +173,21 @@ func (g *Graph) PathWeights(start, goal string) iter.Seq[int64] {
 // PathWeightsByIndex is PathWeights for vertices given by index.
 func (g *Graph) PathWeightsByIndex(start, goal int) iter.Seq[int64] {
 	return func(yield func(int64) bool) {
-		for c := range g.candidateSeq(start, goal) {
-			if !yield(g.distance[g.source] + c.weight) {
+		for r := range g.resultSeq(start, goal, false) {
+			if !yield(r.weight) {
 				return
 			}
 		}
 	}
 }
 
-func (g *Graph) candidateSeq(start, goal int) iter.Seq[*candidate] {
-	return func(yield func(*candidate) bool) {
+type result struct {
+	path   Path
+	weight int64
+}
+
+func (g *Graph) resultSeq(start, goal int, buildPaths bool) iter.Seq[result] {
+	return func(yield func(result) bool) {
 		if !g.startQuery(start, goal) {
 			return
 		}
@@ -177,8 +196,8 @@ func (g *Graph) candidateSeq(start, goal int) iter.Seq[*candidate] {
 			if query != g.queryStamp || changes != g.changeCount {
 				panic("eppstein: the graph was changed or another query was started during the iteration over paths")
 			}
-			c := g.nextCandidate()
-			if c == nil || !yield(c) {
+			p, weight, ok := g.nextResult(buildPaths)
+			if !ok || !yield(result{p, weight}) {
 				return
 			}
 		}
@@ -229,7 +248,10 @@ func (g *Graph) startQuery(start, goal int) bool {
 	g.candidates = newPriorityQueue[*candidate](64)
 	g.candidatesCreated = 0
 	// no paths if the goal cannot be reached, or start and goal are the same vertex
-	if g.stamp[start] == g.queryStamp && start != goal {
+	anyPath := g.stamp[start] == g.queryStamp && start != goal
+	if g.simpleOnly {
+		g.startSimplePaths(anyPath)
+	} else if anyPath {
 		g.candidates.Enqueue(&candidate{}, 0)
 		g.candidatesCreated = 1
 	}

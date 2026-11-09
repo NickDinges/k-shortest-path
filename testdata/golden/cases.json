@@ -7394,5 +7394,967 @@
         "vertices": "V113,V114,V115,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V131,V130,V145"
       }
     ]
+  },
+  {
+    "name": "simple-eppstein-example",
+    "graph": "eppstein-example.csv",
+    "from": "S",
+    "to": "T",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 55,
+        "vertices": "S,D,E,F,J,T"
+      },
+      {
+        "weight": 58,
+        "vertices": "S,A,B,C,G,T"
+      },
+      {
+        "weight": 59,
+        "vertices": "S,A,B,F,J,T"
+      },
+      {
+        "weight": 61,
+        "vertices": "S,D,E,I,J,T"
+      },
+      {
+        "weight": 62,
+        "vertices": "S,A,E,F,J,T"
+      },
+      {
+        "weight": 63,
+        "vertices": "S,D,E,J,T"
+      },
+      {
+        "weight": 64,
+        "vertices": "S,D,E,F,G,T"
+      },
+      {
+        "weight": 65,
+        "vertices": "S,D,H,I,J,T"
+      },
+      {
+        "weight": 67,
+        "vertices": "S,D,E,F,T"
+      },
+      {
+        "weight": 68,
+        "vertices": "S,A,B,F,G,T"
+      },
+      {
+        "weight": 68,
+        "vertices": "S,A,E,I,J,T"
+      },
+      {
+        "weight": 70,
+        "vertices": "S,A,E,J,T"
+      },
+      {
+        "weight": 71,
+        "vertices": "S,A,B,F,T"
+      },
+      {
+        "weight": 71,
+        "vertices": "S,A,E,F,G,T"
+      },
+      {
+        "weight": 74,
+        "vertices": "S,A,E,F,T"
+      }
+    ]
+  },
+  {
+    "name": "simple-eppstein-example-detour-20",
+    "graph": "eppstein-example.csv",
+    "from": "S",
+    "to": "T",
+    "maxDetour": 20,
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 55,
+        "vertices": "S,D,E,F,J,T"
+      },
+      {
+        "weight": 58,
+        "vertices": "S,A,B,C,G,T"
+      },
+      {
+        "weight": 59,
+        "vertices": "S,A,B,F,J,T"
+      },
+      {
+        "weight": 61,
+        "vertices": "S,D,E,I,J,T"
+      },
+      {
+        "weight": 62,
+        "vertices": "S,A,E,F,J,T"
+      },
+      {
+        "weight": 63,
+        "vertices": "S,D,E,J,T"
+      },
+      {
+        "weight": 64,
+        "vertices": "S,D,E,F,G,T"
+      },
+      {
+        "weight": 65,
+        "vertices": "S,D,H,I,J,T"
+      },
+      {
+        "weight": 67,
+        "vertices": "S,D,E,F,T"
+      },
+      {
+        "weight": 68,
+        "vertices": "S,A,B,F,G,T"
+      },
+      {
+        "weight": 68,
+        "vertices": "S,A,E,I,J,T"
+      },
+      {
+        "weight": 70,
+        "vertices": "S,A,E,J,T"
+      },
+      {
+        "weight": 71,
+        "vertices": "S,A,B,F,T"
+      },
+      {
+        "weight": 71,
+        "vertices": "S,A,E,F,G,T"
+      },
+      {
+        "weight": 74,
+        "vertices": "S,A,E,F,T"
+      }
+    ]
+  },
+  {
+    "name": "simple-eppstein-example-negative-weights",
+    "graph": "eppstein-example-negative.csv",
+    "from": "S",
+    "to": "T",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 55,
+        "vertices": "S,D,E,F,J,T"
+      },
+      {
+        "weight": 58,
+        "vertices": "S,A,B,C,G,T"
+      },
+      {
+        "weight": 59,
+        "vertices": "S,A,B,F,J,T"
+      },
+      {
+        "weight": 61,
+        "vertices": "S,D,E,I,J,T"
+      },
+      {
+        "weight": 62,
+        "vertices": "S,A,E,F,J,T"
+      },
+      {
+        "weight": 64,
+        "vertices": "S,D,E,F,G,T"
+      },
+      {
+        "weight": 65,
+        "vertices": "S,D,H,I,J,T"
+      },
+      {
+        "weight": 68,
+        "vertices": "S,A,B,F,G,T"
+      },
+      {
+        "weight": 68,
+        "vertices": "S,A,E,I,J,T"
+      },
+      {
+        "weight": 71,
+        "vertices": "S,A,E,F,G,T"
+      }
+    ]
+  },
+  {
+    "name": "simple-eppstein-example-unreachable",
+    "graph": "eppstein-example.csv",
+    "from": "T",
+    "to": "S",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": []
+  },
+  {
+    "name": "simple-eppstein-example-same-vertex",
+    "graph": "eppstein-example.csv",
+    "from": "C",
+    "to": "C",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": []
+  },
+  {
+    "name": "simple-quickstart-roads",
+    "graph": "quickstart-roads.csv",
+    "from": "HOME",
+    "to": "OFFICE",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 6,
+        "vertices": "HOME,PARK,BAKERY,STATION,OFFICE"
+      },
+      {
+        "weight": 7,
+        "vertices": "HOME,BAKERY,STATION,OFFICE"
+      },
+      {
+        "weight": 9,
+        "vertices": "HOME,PARK,BAKERY,OFFICE"
+      },
+      {
+        "weight": 10,
+        "vertices": "HOME,BAKERY,OFFICE"
+      },
+      {
+        "weight": 10,
+        "vertices": "HOME,PARK,STATION,OFFICE"
+      }
+    ]
+  },
+  {
+    "name": "simple-quickstart-roads-two-way",
+    "graph": "quickstart-roads-two-way.csv",
+    "from": "HOME",
+    "to": "OFFICE",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 6,
+        "vertices": "HOME,PARK,BAKERY,STATION,OFFICE"
+      },
+      {
+        "weight": 7,
+        "vertices": "HOME,BAKERY,STATION,OFFICE"
+      },
+      {
+        "weight": 9,
+        "vertices": "HOME,PARK,BAKERY,OFFICE"
+      },
+      {
+        "weight": 10,
+        "vertices": "HOME,BAKERY,OFFICE"
+      },
+      {
+        "weight": 10,
+        "vertices": "HOME,PARK,STATION,OFFICE"
+      },
+      {
+        "weight": 13,
+        "vertices": "HOME,BAKERY,PARK,STATION,OFFICE"
+      },
+      {
+        "weight": 17,
+        "vertices": "HOME,PARK,STATION,BAKERY,OFFICE"
+      }
+    ]
+  },
+  {
+    "name": "simple-quickstart-roads-two-way-ratio-0.5",
+    "graph": "quickstart-roads-two-way.csv",
+    "from": "HOME",
+    "to": "OFFICE",
+    "maxDetourRatio": 0.5,
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 6,
+        "vertices": "HOME,PARK,BAKERY,STATION,OFFICE"
+      },
+      {
+        "weight": 7,
+        "vertices": "HOME,BAKERY,STATION,OFFICE"
+      },
+      {
+        "weight": 9,
+        "vertices": "HOME,PARK,BAKERY,OFFICE"
+      }
+    ]
+  },
+  {
+    "name": "simple-zero-weights-dag",
+    "graph": "zero-weights-dag.csv",
+    "from": "A",
+    "to": "F",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 1,
+        "vertices": "A,B,C,D,E,F"
+      },
+      {
+        "weight": 1,
+        "vertices": "A,B,D,E,F"
+      },
+      {
+        "weight": 1,
+        "vertices": "A,C,D,E,F"
+      },
+      {
+        "weight": 3,
+        "vertices": "A,B,C,D,F"
+      },
+      {
+        "weight": 3,
+        "vertices": "A,B,C,F"
+      },
+      {
+        "weight": 3,
+        "vertices": "A,B,D,F"
+      },
+      {
+        "weight": 3,
+        "vertices": "A,C,D,F"
+      },
+      {
+        "weight": 3,
+        "vertices": "A,C,F"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-00",
+    "graph": "random-00.csv",
+    "from": "N8",
+    "to": "N6",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 10,
+        "vertices": "N8,N3,N7,N6"
+      },
+      {
+        "weight": 14,
+        "vertices": "N8,N3,N2,N7,N6"
+      },
+      {
+        "weight": 14,
+        "vertices": "N8,N3,N5,N7,N6"
+      },
+      {
+        "weight": 18,
+        "vertices": "N8,N3,N4,N2,N7,N6"
+      },
+      {
+        "weight": 19,
+        "vertices": "N8,N3,N5,N4,N2,N7,N6"
+      },
+      {
+        "weight": 20,
+        "vertices": "N8,N3,N4,N5,N7,N6"
+      },
+      {
+        "weight": 20,
+        "vertices": "N8,N3,N4,N7,N6"
+      },
+      {
+        "weight": 21,
+        "vertices": "N8,N3,N5,N4,N7,N6"
+      },
+      {
+        "weight": 24,
+        "vertices": "N8,N3,N2,N5,N7,N6"
+      },
+      {
+        "weight": 26,
+        "vertices": "N8,N3,N2,N4,N5,N7,N6"
+      },
+      {
+        "weight": 26,
+        "vertices": "N8,N3,N2,N4,N7,N6"
+      },
+      {
+        "weight": 28,
+        "vertices": "N8,N3,N4,N2,N5,N7,N6"
+      },
+      {
+        "weight": 31,
+        "vertices": "N8,N3,N2,N5,N4,N7,N6"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-01",
+    "graph": "random-01.csv",
+    "from": "N2",
+    "to": "N5",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 2,
+        "vertices": "N2,N5"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-02-ratio-0.5",
+    "graph": "random-02.csv",
+    "from": "N3",
+    "to": "N8",
+    "maxDetourRatio": 0.5,
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 10,
+        "vertices": "N3,N0,N8"
+      },
+      {
+        "weight": 11,
+        "vertices": "N3,N0,N6,N7,N4,N5,N8"
+      },
+      {
+        "weight": 11,
+        "vertices": "N3,N7,N4,N5,N8"
+      },
+      {
+        "weight": 13,
+        "vertices": "N3,N0,N2,N1,N8"
+      },
+      {
+        "weight": 14,
+        "vertices": "N3,N0,N1,N8"
+      },
+      {
+        "weight": 14,
+        "vertices": "N3,N0,N6,N7,N4,N8"
+      },
+      {
+        "weight": 14,
+        "vertices": "N3,N7,N4,N8"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-03",
+    "graph": "random-03.csv",
+    "from": "N5",
+    "to": "N0",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 6,
+        "vertices": "N5,N4,N0"
+      },
+      {
+        "weight": 13,
+        "vertices": "N5,N2,N4,N0"
+      },
+      {
+        "weight": 18,
+        "vertices": "N5,N8,N2,N4,N0"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-04",
+    "graph": "random-04.csv",
+    "from": "N3",
+    "to": "N9",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 17,
+        "vertices": "N3,N7,N2,N1,N9"
+      },
+      {
+        "weight": 21,
+        "vertices": "N3,N6,N5,N7,N2,N1,N9"
+      },
+      {
+        "weight": 29,
+        "vertices": "N3,N7,N2,N0,N8,N1,N9"
+      },
+      {
+        "weight": 31,
+        "vertices": "N3,N7,N2,N0,N8,N9"
+      },
+      {
+        "weight": 33,
+        "vertices": "N3,N6,N5,N7,N2,N0,N8,N1,N9"
+      },
+      {
+        "weight": 35,
+        "vertices": "N3,N6,N5,N7,N2,N0,N8,N9"
+      },
+      {
+        "weight": 37,
+        "vertices": "N3,N7,N2,N1,N0,N8,N9"
+      },
+      {
+        "weight": 41,
+        "vertices": "N3,N6,N5,N7,N2,N1,N0,N8,N9"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-05-ratio-0.5",
+    "graph": "random-05.csv",
+    "from": "N7",
+    "to": "N8",
+    "maxDetourRatio": 0.5,
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 17,
+        "vertices": "N7,N6,N0,N8"
+      },
+      {
+        "weight": 21,
+        "vertices": "N7,N1,N4,N3,N0,N8"
+      },
+      {
+        "weight": 22,
+        "vertices": "N7,N1,N4,N8"
+      },
+      {
+        "weight": 24,
+        "vertices": "N7,N1,N4,N2,N0,N8"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-06",
+    "graph": "random-06.csv",
+    "from": "N1",
+    "to": "N9",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 4,
+        "vertices": "N1,N9"
+      },
+      {
+        "weight": 20,
+        "vertices": "N1,N6,N8,N5,N9"
+      },
+      {
+        "weight": 24,
+        "vertices": "N1,N6,N4,N0,N9"
+      },
+      {
+        "weight": 29,
+        "vertices": "N1,N6,N8,N5,N7,N9"
+      },
+      {
+        "weight": 32,
+        "vertices": "N1,N6,N2,N8,N5,N9"
+      },
+      {
+        "weight": 33,
+        "vertices": "N1,N6,N4,N0,N8,N5,N9"
+      },
+      {
+        "weight": 33,
+        "vertices": "N1,N6,N8,N5,N7,N3,N9"
+      },
+      {
+        "weight": 34,
+        "vertices": "N1,N6,N8,N5,N0,N9"
+      },
+      {
+        "weight": 41,
+        "vertices": "N1,N6,N2,N8,N5,N7,N9"
+      },
+      {
+        "weight": 41,
+        "vertices": "N1,N6,N8,N5,N7,N4,N0,N9"
+      },
+      {
+        "weight": 42,
+        "vertices": "N1,N6,N4,N0,N2,N8,N5,N9"
+      },
+      {
+        "weight": 42,
+        "vertices": "N1,N6,N4,N0,N8,N5,N7,N9"
+      },
+      {
+        "weight": 45,
+        "vertices": "N1,N6,N2,N8,N5,N7,N3,N9"
+      },
+      {
+        "weight": 46,
+        "vertices": "N1,N6,N2,N8,N5,N0,N9"
+      },
+      {
+        "weight": 46,
+        "vertices": "N1,N6,N4,N0,N8,N5,N7,N3,N9"
+      },
+      {
+        "weight": 51,
+        "vertices": "N1,N6,N4,N0,N2,N8,N5,N7,N9"
+      },
+      {
+        "weight": 53,
+        "vertices": "N1,N6,N2,N8,N5,N7,N4,N0,N9"
+      },
+      {
+        "weight": 55,
+        "vertices": "N1,N6,N4,N0,N2,N8,N5,N7,N3,N9"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-07",
+    "graph": "random-07.csv",
+    "from": "N2",
+    "to": "N5",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 5,
+        "vertices": "N2,N5"
+      },
+      {
+        "weight": 10,
+        "vertices": "N2,N7,N5"
+      },
+      {
+        "weight": 11,
+        "vertices": "N2,N9,N5"
+      },
+      {
+        "weight": 16,
+        "vertices": "N2,N7,N9,N5"
+      },
+      {
+        "weight": 19,
+        "vertices": "N2,N9,N7,N5"
+      },
+      {
+        "weight": 20,
+        "vertices": "N2,N8,N9,N5"
+      },
+      {
+        "weight": 22,
+        "vertices": "N2,N8,N6,N5"
+      },
+      {
+        "weight": 22,
+        "vertices": "N2,N8,N7,N5"
+      },
+      {
+        "weight": 23,
+        "vertices": "N2,N7,N1,N8,N9,N5"
+      },
+      {
+        "weight": 24,
+        "vertices": "N2,N4,N8,N9,N5"
+      },
+      {
+        "weight": 25,
+        "vertices": "N2,N7,N1,N8,N6,N5"
+      },
+      {
+        "weight": 26,
+        "vertices": "N2,N4,N7,N5"
+      },
+      {
+        "weight": 26,
+        "vertices": "N2,N4,N8,N6,N5"
+      },
+      {
+        "weight": 26,
+        "vertices": "N2,N4,N8,N7,N5"
+      },
+      {
+        "weight": 28,
+        "vertices": "N2,N0,N4,N8,N9,N5"
+      },
+      {
+        "weight": 28,
+        "vertices": "N2,N8,N7,N9,N5"
+      },
+      {
+        "weight": 28,
+        "vertices": "N2,N8,N9,N7,N5"
+      },
+      {
+        "weight": 30,
+        "vertices": "N2,N0,N1,N8,N9,N5"
+      },
+      {
+        "weight": 30,
+        "vertices": "N2,N0,N4,N7,N5"
+      },
+      {
+        "weight": 30,
+        "vertices": "N2,N0,N4,N8,N6,N5"
+      },
+      {
+        "weight": 30,
+        "vertices": "N2,N0,N4,N8,N7,N5"
+      },
+      {
+        "weight": 30,
+        "vertices": "N2,N9,N0,N4,N7,N5"
+      },
+      {
+        "weight": 30,
+        "vertices": "N2,N9,N0,N4,N8,N6,N5"
+      },
+      {
+        "weight": 30,
+        "vertices": "N2,N9,N0,N4,N8,N7,N5"
+      },
+      {
+        "weight": 32,
+        "vertices": "N2,N0,N1,N8,N6,N5"
+      },
+      {
+        "weight": 32,
+        "vertices": "N2,N0,N1,N8,N7,N5"
+      },
+      {
+        "weight": 32,
+        "vertices": "N2,N4,N7,N9,N5"
+      },
+      {
+        "weight": 32,
+        "vertices": "N2,N4,N8,N7,N9,N5"
+      },
+      {
+        "weight": 32,
+        "vertices": "N2,N4,N8,N9,N7,N5"
+      },
+      {
+        "weight": 32,
+        "vertices": "N2,N8,N6,N7,N5"
+      },
+      {
+        "weight": 32,
+        "vertices": "N2,N9,N0,N1,N8,N6,N5"
+      },
+      {
+        "weight": 32,
+        "vertices": "N2,N9,N0,N1,N8,N7,N5"
+      },
+      {
+        "weight": 33,
+        "vertices": "N2,N8,N6,N4,N7,N5"
+      },
+      {
+        "weight": 34,
+        "vertices": "N2,N9,N7,N1,N8,N6,N5"
+      },
+      {
+        "weight": 35,
+        "vertices": "N2,N7,N9,N0,N4,N8,N6,N5"
+      },
+      {
+        "weight": 36,
+        "vertices": "N2,N0,N4,N7,N9,N5"
+      },
+      {
+        "weight": 36,
+        "vertices": "N2,N0,N4,N8,N7,N9,N5"
+      },
+      {
+        "weight": 36,
+        "vertices": "N2,N0,N4,N8,N9,N7,N5"
+      },
+      {
+        "weight": 36,
+        "vertices": "N2,N4,N8,N6,N7,N5"
+      },
+      {
+        "weight": 37,
+        "vertices": "N2,N7,N9,N0,N1,N8,N6,N5"
+      },
+      {
+        "weight": 38,
+        "vertices": "N2,N0,N1,N8,N7,N9,N5"
+      },
+      {
+        "weight": 38,
+        "vertices": "N2,N0,N1,N8,N9,N7,N5"
+      },
+      {
+        "weight": 38,
+        "vertices": "N2,N8,N6,N7,N9,N5"
+      },
+      {
+        "weight": 39,
+        "vertices": "N2,N4,N7,N1,N8,N9,N5"
+      },
+      {
+        "weight": 39,
+        "vertices": "N2,N8,N6,N4,N7,N9,N5"
+      },
+      {
+        "weight": 39,
+        "vertices": "N2,N8,N9,N0,N4,N7,N5"
+      },
+      {
+        "weight": 40,
+        "vertices": "N2,N0,N4,N8,N6,N7,N5"
+      },
+      {
+        "weight": 40,
+        "vertices": "N2,N9,N0,N4,N8,N6,N7,N5"
+      },
+      {
+        "weight": 41,
+        "vertices": "N2,N4,N7,N1,N8,N6,N5"
+      },
+      {
+        "weight": 42,
+        "vertices": "N2,N0,N1,N8,N6,N7,N5"
+      },
+      {
+        "weight": 42,
+        "vertices": "N2,N4,N8,N6,N7,N9,N5"
+      },
+      {
+        "weight": 42,
+        "vertices": "N2,N9,N0,N1,N8,N6,N7,N5"
+      },
+      {
+        "weight": 43,
+        "vertices": "N2,N0,N1,N8,N6,N4,N7,N5"
+      },
+      {
+        "weight": 43,
+        "vertices": "N2,N0,N4,N7,N1,N8,N9,N5"
+      },
+      {
+        "weight": 43,
+        "vertices": "N2,N9,N0,N1,N8,N6,N4,N7,N5"
+      },
+      {
+        "weight": 45,
+        "vertices": "N2,N0,N4,N7,N1,N8,N6,N5"
+      },
+      {
+        "weight": 45,
+        "vertices": "N2,N9,N0,N4,N7,N1,N8,N6,N5"
+      },
+      {
+        "weight": 46,
+        "vertices": "N2,N0,N4,N8,N6,N7,N9,N5"
+      },
+      {
+        "weight": 48,
+        "vertices": "N2,N0,N1,N8,N6,N7,N9,N5"
+      },
+      {
+        "weight": 49,
+        "vertices": "N2,N0,N1,N8,N6,N4,N7,N9,N5"
+      },
+      {
+        "weight": 53,
+        "vertices": "N2,N4,N7,N9,N0,N1,N8,N6,N5"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-08-ratio-0.5",
+    "graph": "random-08.csv",
+    "from": "N6",
+    "to": "N4",
+    "maxDetourRatio": 0.5,
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 6,
+        "vertices": "N6,N4"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-09",
+    "graph": "random-09.csv",
+    "from": "N5",
+    "to": "N7",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 3,
+        "vertices": "N5,N4,N7"
+      },
+      {
+        "weight": 12,
+        "vertices": "N5,N0,N2,N4,N7"
+      },
+      {
+        "weight": 18,
+        "vertices": "N5,N1,N0,N2,N4,N7"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-10",
+    "graph": "random-10.csv",
+    "from": "N2",
+    "to": "N5",
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 15,
+        "vertices": "N2,N0,N8,N3,N5"
+      },
+      {
+        "weight": 19,
+        "vertices": "N2,N7,N8,N3,N5"
+      },
+      {
+        "weight": 21,
+        "vertices": "N2,N7,N6,N8,N3,N5"
+      }
+    ]
+  },
+  {
+    "name": "simple-random-11-ratio-0.5",
+    "graph": "random-11.csv",
+    "from": "N4",
+    "to": "N3",
+    "maxDetourRatio": 0.5,
+    "simplePathsOnly": true,
+    "complete": true,
+    "paths": [
+      {
+        "weight": 7,
+        "vertices": "N4,N3"
+      },
+      {
+        "weight": 10,
+        "vertices": "N4,N0,N6,N3"
+      }
+    ]
   }
 ]

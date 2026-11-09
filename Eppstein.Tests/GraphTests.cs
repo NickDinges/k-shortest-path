@@ -689,6 +689,133 @@ namespace Eppstein.Tests
             Assert.Throws<ArgumentNullException>(() => g.ImportDimacs(null));
         }
 
+        /// <summary>All simple start-goal paths (no repeated vertex) as "weight:labels", sorted by weight.</summary>
+        private static List<(long Weight, string Vertices)> BruteForceSimplePaths(int n, List<Tuple<int, int, int>> edges, int s, int t)
+        {
+            List<(long, string)> result = new List<(long, string)>();
+            bool[] visited = new bool[n];
+            List<int> path = new List<int> { s };
+            void Visit(int v, long weight)
+            {
+                if (v == t)
+                {
+                    result.Add((weight, string.Join(",", path.Select(x => "V" + x))));
+                    return;
+                }
+                visited[v] = true;
+                foreach (var e in edges)
+                {
+                    if (e.Item1 == v && e.Item3 >= 0 && !visited[e.Item2])
+                    {
+                        path.Add(e.Item2);
+                        Visit(e.Item2, weight + e.Item3);
+                        path.RemoveAt(path.Count - 1);
+                    }
+                }
+                visited[v] = false;
+            }
+            if (s != t)
+                Visit(s, 0);
+            return result.OrderBy(r => r.Item1).ToList();
+        }
+
+        [Theory]
+        [InlineData(0)]  // plain
+        [InlineData(1)]  // arc flags
+        [InlineData(2)]  // corridor
+        public void SimplePaths_MatchBruteForce(int variant)
+        {
+            Random rnd = new Random(23 + variant);
+            int checkedGraphs = 0;
+            for (int it = 0; it < 300; it++)
+            {
+                int n = rnd.Next(2, 9);
+                string[] labels = Enumerable.Range(0, n).Select(i => "V" + i).ToArray();
+                List<Tuple<int, int, int>> edges = new List<Tuple<int, int, int>>();
+                for (int i = 0; i < n; i++)
+                    for (int j = 0; j < n; j++)
+                        if (rnd.NextDouble() < 0.35)
+                            edges.Add(Tuple.Create(i, j, rnd.Next(0, 10) - (rnd.NextDouble() < 0.05 ? 20 : 0)));
+
+                Graph g = new Graph();
+                g.CreateVertices(string.Join(",", labels));
+                foreach (var e in edges)
+                    g.CreateEdges(labels[e.Item1], labels[e.Item2], e.Item3, "g");
+                g.SimplePathsOnly = true;
+                if (variant == 1)
+                    g.EnableArcFlags(rnd.Next(1, 4));
+
+                int s = rnd.Next(n), t = rnd.Next(n);
+                List<(long Weight, string Vertices)> expected = BruteForceSimplePaths(n, edges, s, t);
+                if (variant == 2 && expected.Count > 0)
+                {
+                    g.MaxDetour = rnd.Next(0, 12);
+                    expected = expected.Where(p => p.Weight <= expected[0].Weight + g.MaxDetour).ToList();
+                }
+
+                List<GraphPath> actual = g.EnumeratePaths(labels[s], labels[t]).Take(expected.Count + 5).ToList();
+                Assert.Equal(expected.Select(p => p.Weight), actual.Select(p => p.Weight));
+                foreach (var group in expected.GroupBy(p => p.Weight))
+                    Assert.Equal(group.Select(p => p.Vertices).OrderBy(x => x, StringComparer.Ordinal),
+                        actual.Where(p => p.Weight == group.Key).Select(p => p.VertexNames).OrderBy(x => x, StringComparer.Ordinal));
+                foreach (GraphPath p in actual)
+                    Assert.Equal(p.Count + 1, p.Vertices.Distinct().Count());  // Simple
+                if (expected.Count > 0)
+                    checkedGraphs++;
+            }
+            Assert.True(checkedGraphs >= 100, "only " + checkedGraphs + " graphs with paths");
+        }
+
+        [Fact]
+        public void SimplePaths_TwoWayRoads_GiveRealAlternatives()
+        {
+            Graph g = new Graph();
+            g.CreateVertices("HOME,PARK,BAKERY,STATION,OFFICE");
+            foreach (var (a, b, w) in new[] { ("HOME", "PARK", 2), ("HOME", "BAKERY", 4), ("PARK", "BAKERY", 1),
+                ("PARK", "STATION", 7), ("BAKERY", "STATION", 2), ("BAKERY", "OFFICE", 6), ("STATION", "OFFICE", 1) })
+                g.CreateEdges(a + "," + b, b + "," + a, w, "road");  // Both directions
+
+            // Default (Eppstein): the third path already drives back and forth
+            Assert.Equal("HOME,PARK,BAKERY,STATION,OFFICE,STATION,OFFICE",
+                g.EnumeratePaths("HOME", "OFFICE").ElementAt(2).VertexNames);
+
+            g.SimplePathsOnly = true;
+            List<GraphPath> paths = g.EnumeratePaths("HOME", "OFFICE").ToList();  // Finite: ends by itself
+            // Exactly the 7 simple routes (checked by hand with a depth-first search), then the end
+            Assert.Equal(new long[] { 6, 7, 9, 10, 10, 13, 17 }, paths.Select(p => p.Weight));
+            Assert.Equal("HOME,PARK,BAKERY,STATION,OFFICE", paths[0].VertexNames);
+            Assert.Equal("HOME,BAKERY,STATION,OFFICE", paths[1].VertexNames);
+            Assert.Equal("HOME,PARK,BAKERY,OFFICE", paths[2].VertexNames);
+            Assert.All(paths, p => Assert.Equal(p.Count + 1, p.Vertices.Distinct().Count()));
+            Assert.Equal(paths.Select(p => p.Weight), g.EnumeratePathWeights("HOME", "OFFICE"));
+
+            g.MaxDetourRatio = 0.5;  // Corridor: at most 9 minutes
+            Assert.Equal(new long[] { 6, 7, 9 }, g.EnumeratePathWeights("HOME", "OFFICE"));
+        }
+
+        [Fact]
+        public void SimplePaths_EdgeCasesAndLaziness()
+        {
+            Graph g = EppsteinExample();
+            g.SimplePathsOnly = true;
+            Assert.True(g.SimplePathsOnly);
+            Assert.False(g.FindShortestPath("T", "S").IsValid);  // Unreachable
+            Assert.False(g.FindShortestPath("C", "C").IsValid);  // Start = goal
+            Assert.False(g.FindShortestPath("S", "X").IsValid);  // Unknown
+
+            GraphPath first = g.FindShortestPath("S", "T");
+            Assert.Equal("S,D,E,F,J,T (55)", first.ToString());
+            Assert.Equal(0, g.SpurSearches);  // Spurs are only searched when the next path is requested
+            Assert.True(g.FindNextShortestPath().IsValid);
+            Assert.True(g.SpurSearches > 0);
+
+            g.SimplePathsOnly = false;  // Changing the mode requires a new query
+            Assert.False(g.FindNextShortestPath().IsValid);
+            // Eppstein's example: 16 simple paths before the loop at C repeats; simple mode stops there
+            g.SimplePathsOnly = true;
+            Assert.DoesNotContain(g.EnumeratePaths("S", "T"), p => p.VertexNames.Contains("C,C"));
+        }
+
         [Fact]
         public void Serialize_WritesAllVerticesAndEdges()
         {

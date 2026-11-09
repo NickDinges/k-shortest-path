@@ -1,0 +1,16 @@
+# tail,head,weight,group
+# The quick start road network, but every road in both directions
+HOME,PARK,2,walk
+PARK,HOME,2,walk
+HOME,BAKERY,4,walk
+BAKERY,HOME,4,walk
+PARK,BAKERY,1,walk
+BAKERY,PARK,1,walk
+PARK,STATION,7,walk
+STATION,PARK,7,walk
+BAKERY,STATION,2,walk
+STATION,BAKERY,2,walk
+BAKERY,OFFICE,6,walk
+OFFICE,BAKERY,6,walk
+STATION,OFFICE,1,train
+OFFICE,STATION,1,train

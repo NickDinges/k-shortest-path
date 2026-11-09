@@ -169,6 +169,49 @@ namespace Eppstein.Tests
                 return actual.SequenceEqual(expected);
             });
 
+        [Property(MaxTest = 1500)]
+        public Property SimplePaths_MatchBruteForce() =>
+            Prop.ForAll(SmallGraphs(), sg =>
+            {
+                // All simple paths by depth-first search
+                List<long> expected = new List<long>();
+                bool[] visited = new bool[sg.VertexCount];
+                void Visit(int v, long weight)
+                {
+                    if (v == sg.Goal)
+                    {
+                        expected.Add(weight);
+                        return;
+                    }
+                    visited[v] = true;
+                    foreach (var e in sg.Edges)
+                        if (e.Tail == v && !visited[e.Head])
+                            Visit(e.Head, weight + e.Weight);
+                    visited[v] = false;
+                }
+                Visit(sg.Start, 0);
+                expected.Sort();
+
+                Graph g = new Graph();
+                for (int v = 0; v < sg.VertexCount; v++)
+                    g.AddVertex("N" + v);
+                foreach (var e in sg.Edges)
+                    g.AddEdge(e.Tail, e.Head, e.Weight);
+                g.SimplePathsOnly = true;
+                if (sg.ArcFlagRegions > 0)
+                    g.EnableArcFlags(sg.ArcFlagRegions);
+                if (sg.MaxDetour.HasValue)
+                {
+                    g.MaxDetour = sg.MaxDetour.Value;
+                    if (expected.Count > 0)
+                        expected = expected.Where(w => w <= expected[0] + sg.MaxDetour.Value).ToList();
+                }
+
+                List<GraphPath> paths = g.EnumeratePaths(sg.Start, sg.Goal).Take(expected.Count + 1).ToList();
+                return paths.Select(p => p.Weight).SequenceEqual(expected) &&
+                    paths.All(p => p.Vertices.Distinct().Count() == p.Count + 1);
+            });
+
         /// <summary>
         /// Sorted weights of all start-goal walks up to maxWeight; null if the enumeration would visit
         /// more than maxStates states.

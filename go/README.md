@@ -115,6 +115,7 @@ properties, so a few names differ:
 | enumeration after a change: `InvalidOperationException` | iteration after a change: panic |
 | `g.MaxDetour = 15` / `g.MaxDetour` | `g.SetMaxDetour(15)` → `bool` / `g.MaxDetour()` |
 | `g.MaxDetourRatio = 0.2` / `g.MaxDetourRatio` | `g.SetMaxDetourRatio(0.2)` → `bool` / `g.MaxDetourRatio()` |
+| `g.SimplePathsOnly = true` / `g.SimplePathsOnly` | `g.SetSimplePathsOnly(true)` / `g.SimplePathsOnly()` |
 | `long.MaxValue` / `double.PositiveInfinity` (no limit) | `math.MaxInt64` / `math.Inf(1)` |
 | invalid limit: `ArgumentOutOfRangeException` | invalid limit: returns `false` |
 | `g.EnableArcFlags(3)` | `g.EnableArcFlags(3)` |
@@ -142,6 +143,10 @@ properties, so a few names differ:
 The same rules as in the C# version apply (see
 [section 7 of the main README](../README.md#7-things-to-know-common-pitfalls)):
 
+- **Routes without loops:** by default paths may repeat vertices; in networks with two-way
+  connections most of them are loops. `g.SetSimplePathsOnly(true)` returns only simple paths
+  (Yen with Lawler's improvement), see
+  [section 8 of the main README](../README.md#8-routes-without-loops-simplepathsonly).
 - **Graphs with cycles have infinitely many paths.** Stop the loop yourself
   (`for p := range g.Paths(s, t) { …; if done { break } }`), or set a corridor with
   `SetMaxDetour` or `SetMaxDetourRatio`: then the number of paths is finite.
@@ -166,7 +171,7 @@ Go-specific:
 
 ## Performance
 
-Same grid graphs as in [section 10 of the main README](../README.md#10-performance)
+Same grid graphs as in [section 11 of the main README](../README.md#11-performance)
 (4-core cloud VM):
 
 | Vertices | Edges | First path + next 10,000 paths | Memory allocated |
@@ -196,6 +201,7 @@ go test -run none -bench . -benchmem ./eppstein
 | `eppstein/serialize.go` | Graphviz (DOT) output |
 | `eppstein/pqueue.go` | Priority queue (binary heap) used by the algorithm |
 | `eppstein/sidetrackheap.go` | Persistent heap of detours (Eppstein's path enumeration) |
+| `eppstein/simplepaths.go` | Simple paths: Yen's algorithm with Lawler's improvement and A* |
 | `eppstein/*_test.go` | Tests, benchmarks and runnable examples; `golden_test.go` checks the shared data in `../testdata/golden` |
 | `cmd/eppstein/main.go` | Demo program (`go run ./cmd/eppstein [k] [--dot file]`) |
 
