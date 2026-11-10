@@ -29,7 +29,7 @@ jobs:
         if: matrix.language == 'go'
         with:
           go-version: stable
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -37,6 +37,6 @@ jobs:
         if: matrix.build-mode == 'manual'
         working-directory: go
         run: go build ./...
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
