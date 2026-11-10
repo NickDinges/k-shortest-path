@@ -53,7 +53,7 @@ if QUICK:
 
 
 def build():
-    subprocess.run(["dotnet", "build", "-c", "Release", "Eppstein.Benchmarks", "-v", "q"], cwd=ROOT, check=True,
+    subprocess.run(["dotnet", "build", "-c", "Release", "csharp/Eppstein.Benchmarks", "-v", "q"], cwd=ROOT, check=True,
                    stdout=subprocess.DEVNULL)
     subprocess.run(["go", "build", "-o", os.path.join(ROOT, "go", "benchmark.bin"), "./cmd/benchmark"],
                    cwd=os.path.join(ROOT, "go"), check=True)
@@ -62,7 +62,7 @@ def build():
 
 
 COMMANDS = {
-    "C#": ["dotnet", os.path.join(ROOT, "Eppstein.Benchmarks/bin/Release/net10.0/Eppstein.Benchmarks.dll")],
+    "C#": ["dotnet", os.path.join(ROOT, "csharp/Eppstein.Benchmarks/bin/Release/net10.0/Eppstein.Benchmarks.dll")],
     "Go": [os.path.join(ROOT, "go", "benchmark.bin")],
     "Rust": [os.path.join(ROOT, "rust/target/release/benchmark")],
 }

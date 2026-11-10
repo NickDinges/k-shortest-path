@@ -82,8 +82,8 @@ the [.NET 8 runtime](https://dotnet.microsoft.com/download/dotnet/8.0).
 ```sh
 git clone https://github.com/nickdinges/k-shortest-path.git
 cd k-shortest-path
-dotnet run --project Eppstein.Demo          # prints the 20 shortest paths of the example graph
-dotnet run --project Eppstein.Demo -- 5     # prints only the 5 shortest paths
+dotnet run --project csharp/Eppstein.Demo          # prints the 20 shortest paths of the example graph
+dotnet run --project csharp/Eppstein.Demo -- 5     # prints only the 5 shortest paths
 ```
 
 The output looks like this (each line is a route, with its total length in brackets):
@@ -100,7 +100,7 @@ S,A,B,F,J,T (59)
 **Run the tests** (optional, checks that everything works):
 
 ```sh
-dotnet test Eppstein.sln
+dotnet test csharp/Eppstein.sln
 ```
 
 ## 3. Your first program
@@ -115,7 +115,7 @@ the `k-shortest-path` folder):
 
 ```sh
 dotnet new console -o MyRoutes
-dotnet add MyRoutes reference k-shortest-path/Eppstein/Eppstein.csproj
+dotnet add MyRoutes reference k-shortest-path/csharp/Eppstein/Eppstein.csproj
 ```
 
 **Step 2:** replace the content of `MyRoutes/Program.cs` with:
@@ -346,7 +346,7 @@ No Graphviz installed? Paste the text into an online viewer such as
 The demo program can do this for you. This draws the example graph with its 3 shortest paths:
 
 ```sh
-dotnet run --project Eppstein.Demo -- 5 --dot graph.dot
+dotnet run --project csharp/Eppstein.Demo -- 5 --dot graph.dot
 ```
 
 **How to read the picture:**
@@ -841,30 +841,30 @@ vertices, `--ratio` = `MaxDetourRatio`, `--build strings|index|dimacs` = way of 
 hierarchy, its preparation time is written to standard error):
 
 ```sh
-dotnet run -c Release --project Eppstein.Benchmarks -- 50 100 200 --k 10000
-dotnet run -c Release --project Eppstein.Benchmarks -- 1000 --local --ratio 0.1
-dotnet run -c Release --project Eppstein.Benchmarks -- 1000 --build index
-dotnet run -c Release --project Eppstein.Benchmarks -- 100 200 --two-way --simple --k 100
-dotnet run -c Release --project Eppstein.Benchmarks -- 200 1000 --build index --ch
+dotnet run -c Release --project csharp/Eppstein.Benchmarks -- 50 100 200 --k 10000
+dotnet run -c Release --project csharp/Eppstein.Benchmarks -- 1000 --local --ratio 0.1
+dotnet run -c Release --project csharp/Eppstein.Benchmarks -- 1000 --build index
+dotnet run -c Release --project csharp/Eppstein.Benchmarks -- 100 200 --two-way --simple --k 100
+dotnet run -c Release --project csharp/Eppstein.Benchmarks -- 200 1000 --build index --ch
 ```
 
 ## 12. Project layout and tests
 
 | Folder / file | Content |
 |---|---|
-| `Eppstein/` | The library (NuGet package `Eppstein.KShortestPaths`) |
-| `Eppstein/Graph.cs` | Storage, building the graph, vertices and edges |
-| `Eppstein/Graph.Paths.cs` | Queries: Dijkstra, corridor, path enumeration |
-| `Eppstein/Graph.ArcFlags.cs` | Optional arc-flags speed-up |
-| `Eppstein/Graph.ContractionHierarchy.cs` | Optional contraction hierarchy with PHAST |
-| `Eppstein/Graph.Import.cs` | CSV and DIMACS import |
-| `Eppstein/Graph.Serialize.cs` | Graphviz (DOT) output |
-| `Eppstein/Vertex.cs`, `Edge.cs`, `GraphPath.cs` | The public value types |
-| `Eppstein/SidetrackHeap.cs` | Persistent heap of detours (Eppstein's path enumeration) |
-| `Eppstein/Graph.SimplePaths.cs` | Simple paths: Yen's algorithm with Lawler's improvement and A* |
-| `Eppstein.Demo/` | Demo program (`dotnet run --project Eppstein.Demo -- [k] [--dot file]`) |
-| `Eppstein.Tests/` | Automated tests (xUnit) |
-| `Eppstein.Benchmarks/` | Timing benchmark (see section 11) |
+| `csharp/Eppstein/` | The library (NuGet package `Eppstein.KShortestPaths`) |
+| `csharp/Eppstein/Graph.cs` | Storage, building the graph, vertices and edges |
+| `csharp/Eppstein/Graph.Paths.cs` | Queries: Dijkstra, corridor, path enumeration |
+| `csharp/Eppstein/Graph.ArcFlags.cs` | Optional arc-flags speed-up |
+| `csharp/Eppstein/Graph.ContractionHierarchy.cs` | Optional contraction hierarchy with PHAST |
+| `csharp/Eppstein/Graph.Import.cs` | CSV and DIMACS import |
+| `csharp/Eppstein/Graph.Serialize.cs` | Graphviz (DOT) output |
+| `csharp/Eppstein/Vertex.cs`, `Edge.cs`, `GraphPath.cs` | The public value types |
+| `csharp/Eppstein/SidetrackHeap.cs` | Persistent heap of detours (Eppstein's path enumeration) |
+| `csharp/Eppstein/Graph.SimplePaths.cs` | Simple paths: Yen's algorithm with Lawler's improvement and A* |
+| `csharp/Eppstein.Demo/` | Demo program (`dotnet run --project csharp/Eppstein.Demo -- [k] [--dot file]`) |
+| `csharp/Eppstein.Tests/` | Automated tests (xUnit) |
+| `csharp/Eppstein.Benchmarks/` | Timing benchmark (see section 11) |
 | `testdata/golden/` | Graphs with expected paths, checked by the C# **and** the Go tests |
 | `.github/workflows/ci.yml` | CI: build, tests and a benchmark comparison for every pull request |
 | `docs/` | Images used in this README, and [an assessment of contraction hierarchies for this library](docs/research-ch-and-k-shortest-paths.md) (with measurements of the implementation) |
@@ -873,9 +873,9 @@ dotnet run -c Release --project Eppstein.Benchmarks -- 200 1000 --build index --
 | `paper/` | Paper (LaTeX) with the cross-language measurements and their scripts ([README](paper/README.md)) |
 
 ```sh
-dotnet build Eppstein.sln   # compile (warnings count as errors)
-dotnet test Eppstein.sln    # run all tests
-dotnet pack Eppstein/Eppstein.csproj -c Release -o artifacts   # build the NuGet package
+dotnet build csharp/Eppstein.sln   # compile (warnings count as errors)
+dotnet test csharp/Eppstein.sln    # run all tests
+dotnet pack csharp/Eppstein/Eppstein.csproj -c Release -o artifacts   # build the NuGet package
 ```
 
 The tests compare the results with a brute-force search on hundreds of random graphs (with and
@@ -883,7 +883,7 @@ without cycles, corridors, arc flags and the contraction hierarchy; all golden c
 the contraction hierarchy), and check the shared golden data, the Graphviz output
 and the error handling. On top of that:
 
-- **Property-based tests** (`Eppstein.Tests/PropertyTests.cs`, with
+- **Property-based tests** (`csharp/Eppstein.Tests/PropertyTests.cs`, with
   [FsCheck](https://fscheck.github.io/FsCheck/)) generate thousands of graphs and import files per
   run, and shrink a failing input to a minimal example.
 - **Fuzz tests** for the Go version (`go/eppstein/fuzz_test.go`) search for inputs that crash the
@@ -903,7 +903,7 @@ The CI (`.github/workflows/`) checks every pull request:
 Measure the coverage yourself:
 
 ```sh
-dotnet test Eppstein.sln --collect:"XPlat Code Coverage"
+dotnet test csharp/Eppstein.sln --collect:"XPlat Code Coverage"
 ```
 
 ## 13. Upgrading from version 1

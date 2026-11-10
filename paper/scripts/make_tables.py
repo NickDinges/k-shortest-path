@@ -307,8 +307,8 @@ def files(directory, pattern, exclude=None):
     return result
 
 
-macros["NumLocCs"] = str(loc(files("Eppstein", r".*\.cs")))
-macros["NumLocCsTests"] = str(loc(files("Eppstein.Tests", r".*\.cs")))
+macros["NumLocCs"] = str(loc(files("csharp/Eppstein", r".*\.cs")))
+macros["NumLocCsTests"] = str(loc(files("csharp/Eppstein.Tests", r".*\.cs")))
 macros["NumLocGo"] = str(loc(files("go/eppstein", r".*\.go", r".*_test\.go")))
 macros["NumLocGoTests"] = str(loc(files("go/eppstein", r".*_test\.go")))
 macros["NumLocRust"] = str(loc(files("rust/src", r".*\.rs")))

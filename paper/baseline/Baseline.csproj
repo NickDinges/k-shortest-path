@@ -10,6 +10,6 @@
     <RootNamespace>Baseline</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../Eppstein/Eppstein.csproj" />
+    <ProjectReference Include="../../csharp/Eppstein/Eppstein.csproj" />
   </ItemGroup>
 </Project>

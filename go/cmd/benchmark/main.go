@@ -1,4 +1,4 @@
-// Command benchmark times the library on grid graphs, identical to the C# (Eppstein.Benchmarks)
+// Command benchmark times the library on grid graphs, identical to the C# (csharp/Eppstein.Benchmarks)
 // and Rust (rust/src/bin/benchmark.rs) programs: same generator (SplitMix64, seed 1), same options,
 // same output, so the last column (weight of the last path) must match across the languages.
 //

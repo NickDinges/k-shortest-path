@@ -8,9 +8,9 @@ base=$(cd "$1" && pwd)
 head=$(cd "$2" && pwd)
 work=$(mktemp -d)
 
-# C# benchmark project (it was called Eppstein2.Benchmarks before version 2)
+# C# benchmark project (in csharp/ since the folder move; it was called Eppstein2.Benchmarks before version 2)
 csharp_project() {
-  for p in Eppstein.Benchmarks Eppstein2.Benchmarks; do
+  for p in csharp/Eppstein.Benchmarks Eppstein.Benchmarks Eppstein2.Benchmarks; do
     [ -d "$1/$p" ] && { echo "$1/$p"; return; }
   done
 }

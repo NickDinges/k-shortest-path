@@ -5,7 +5,7 @@ using Eppstein;
 
 /// <summary>
 /// Simple timing benchmark on grid graphs (run in Release mode):
-///   dotnet run -c Release --project Eppstein2.Benchmarks -- [size...] [--k N] [--local] [--ratio R] [--build strings|index|dimacs] [--two-way] [--simple] [--ch]
+///   dotnet run -c Release --project csharp/Eppstein.Benchmarks -- [size...] [--k N] [--local] [--ratio R] [--build strings|index|dimacs] [--two-way] [--simple] [--ch]
 ///       [--arc-flags N] [--reps N] [--weights]
 /// --build chooses how the graph is built: CreateVertices/CreateEdges with labels (strings, default),
 /// AddVertex/AddEdge by index (index), or ImportDimacs from a DIMACS text in memory (dimacs).
