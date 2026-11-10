@@ -5,11 +5,11 @@ points in a network, then the **second shortest**, the **third shortest**, and s
 [Eppstein's algorithm](http://www.ics.uci.edu/~eppstein/pubs/Epp-SJC-98.pdf).
 
 > **Paper:** [`../paper/main.pdf`](../paper/main.pdf) compares this Go version with the C# and Rust
-> versions on identical graphs, including the effect of Go's garbage collector (none measurable).
-> See [section 15 of the main README](../README.md#15-the-paper).
+> versions on identical graphs, including the cost of Go's garbage collector (a few percent of the time, more memory).
+> See [the summary in the main README](../README.md#the-paper).
 
 The API, the behavior and the Graphviz output are the same as in the C# version. The
-[main README](../README.md) explains the concepts (graph, edge, weight, path, arc flags) step by
+[user guide](../docs/guide.md) explains the concepts (graph, edge, weight, path, arc flags) step by
 step; everything there applies here too. This page shows the Go-specific parts.
 
 No dependencies outside the Go standard library. Requires **Go 1.23 or newer** (for `range` over the path iterators).
@@ -32,15 +32,16 @@ Create a new module and add the library:
 ```sh
 mkdir myroutes && cd myroutes
 go mod init myroutes
-go get github.com/nickdinges/k-shortest-path/go/eppstein
+go get github.com/nickdinges/k-shortest-path/go/v2/eppstein
 ```
 
-> `go get` works once this code is on the repository's default branch and the repository is
-> public. Until then, point Go to a local copy instead:
+> `go get` works from the first release on (tag `go/v2.0.0`, see
+> [Releasing](../docs/releasing.md)). The path ends in `/v2` because Go requires the major version
+> in the module path from version 2 on. Before the release, point Go to a local copy instead:
 >
 > ```sh
-> go mod edit -replace github.com/nickdinges/k-shortest-path/go=../k-shortest-path/go
-> go mod edit -require github.com/nickdinges/k-shortest-path/go@v0.0.0
+> go mod edit -replace github.com/nickdinges/k-shortest-path/go/v2=../k-shortest-path/go
+> go mod edit -require github.com/nickdinges/k-shortest-path/go/v2@v2.0.0
 > ```
 
 `main.go`:
@@ -51,7 +52,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/nickdinges/k-shortest-path/go/eppstein"
+	"github.com/nickdinges/k-shortest-path/go/v2/eppstein"
 )
 
 func main() {
@@ -150,12 +151,12 @@ properties, so a few names differ:
 ## Things to know
 
 The same rules as in the C# version apply (see
-[section 7 of the main README](../README.md#7-things-to-know-common-pitfalls)):
+[Things to know in the user guide](../docs/guide.md#things-to-know-common-pitfalls)):
 
 - **Routes without loops:** by default paths may repeat vertices; in networks with two-way
   connections most of them are loops. `g.SetSimplePathsOnly(true)` returns only simple paths
   (Yen with Lawler's improvement), see
-  [section 8 of the main README](../README.md#8-routes-without-loops-simplepathsonly).
+  [Routes without loops](../docs/simple-paths.md).
 - **Graphs with cycles have infinitely many paths.** Stop the loop yourself
   (`for p := range g.Paths(s, t) { …; if done { break } }`), or set a corridor with
   `SetMaxDetour` or `SetMaxDetourRatio`: then the number of paths is finite.
@@ -180,7 +181,7 @@ Go-specific:
 
 ## Performance
 
-Same grid graphs as in [section 11 of the main README](../README.md#11-performance)
+Same grid graphs as in [Performance](../docs/performance.md)
 (4-core cloud VM):
 
 | Vertices | Edges | First path + next 10,000 paths | Memory allocated |
@@ -224,15 +225,15 @@ go run ./cmd/benchmark 200 1000 --k 10000 --build index   # same program as the 
 ## Moving this module into its own repository
 
 The module lives in the `go/` folder, so its import path is
-`github.com/nickdinges/k-shortest-path/go`. To publish it as a separate repository (for example
+`github.com/nickdinges/k-shortest-path/go/v2`. To publish it as a separate repository (for example
 `github.com/nickdinges/k-shortest-path-go`):
 
 1. Copy the content of `go/` into the root of the new repository.
 2. Replace the module path everywhere:
 
    ```sh
-   grep -rl 'github.com/nickdinges/k-shortest-path/go' . \
-     | xargs sed -i 's#github.com/nickdinges/k-shortest-path/go#github.com/nickdinges/k-shortest-path-go#g'
+   grep -rl 'github.com/nickdinges/k-shortest-path/go/v2' . \
+     | xargs sed -i 's#github.com/nickdinges/k-shortest-path/go/v2#github.com/nickdinges/k-shortest-path-go/v2#g'
    ```
 
 3. Copy `../testdata/golden` into the new repository as `testdata/golden` and change

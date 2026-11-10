@@ -1,6 +1,0 @@
-All three languages return the same path weights. On the $10^6$-vertex grid the tree takes 255\,ms (\cs), 312\,ms (Go)
-and 260\,ms (Rust), and the next $10^4$ paths 406, 359 and 314\,ms. For $10^5$ paths all three need 31--34\,\textmu s
-per path. Most of that time goes into writing out each path of about 2000 edges, not into the enumeration, which
-creates at most three candidates per path; an iterator over weights only avoids this cost. On the small $200^2$
-grid \cs{} looks 3--4$\times$ slower. As \cref{sec:discussion} shows, this is caused by tiered JIT compilation, not
-by garbage collection.

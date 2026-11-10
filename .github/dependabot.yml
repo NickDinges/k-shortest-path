@@ -6,7 +6,7 @@ updates:
     schedule:
       interval: weekly
   - package-ecosystem: nuget
-    directory: /
+    directory: /csharp
     schedule:
       interval: weekly
     groups:

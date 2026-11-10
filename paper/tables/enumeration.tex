@@ -1,0 +1,19 @@
+\begin{table}[t]
+\centering
+\caption{Enumerating $10^5$ paths on the $10^6$-vertex grid after the tree is known: time with and without writing out the paths, and the memory allocated and garbage collections during the enumeration with paths.}
+\label{tab:enumeration}
+\small
+\begin{tabular}{lrrr}
+\toprule
+ & \cs{} & Go & Rust \\
+\midrule
+paths written out (ms) & \num{3094} & \num{3188} & \textbf{\num{2804}} \\
+weights only (ms) & \num{144} & 44.4 & \textbf{28.4} \\
+\midrule
+allocated, paths written out (MB) & 839 & 855 & 837 \\
+garbage collections & 6 & 5 & -- \\
+total GC pause (ms) & 119.6 & 0.5 & -- \\
+allocated, weights only (MB) & 32 & 37 & 15 \\
+\bottomrule
+\end{tabular}
+\end{table}

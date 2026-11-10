@@ -1,9 +1,15 @@
-//! Timing benchmark on grid graphs, identical to the C# (Eppstein.Benchmarks) and Go
+//! Timing benchmark on grid graphs, identical to the C# (csharp/Eppstein.Benchmarks) and Go
 //! (go/cmd/benchmark) programs: same generator (SplitMix64, seed 1), same options, same output,
 //! so the last column (weight of the last path) must match across the languages.
 //!
 //!   cargo run --release --bin benchmark -- [size...] [--k N] [--local] [--ratio R]
 //!       [--build strings|index|dimacs] [--two-way] [--simple] [--ch]
+//!       [--arc-flags N] [--reps N] [--weights]
+//!
+//! --reps N repeats the first-path query N more times in the same process (steady state),
+//! --weights enumerates only the weights of the next paths, --arc-flags N enables arc flags with N
+//! regions. A "stats:" line on standard error reports the steady-state times and the bytes
+//! allocated while the next paths were enumerated (there is no garbage collector: gc_count is 0).
 //!
 //! Memory is measured with a counting allocator: bytes allocated by the graph after the first
 //! query (live heap, comparable to the C# and Go numbers after a garbage collection).
@@ -17,10 +23,12 @@ use eppstein::Graph;
 
 struct Counting;
 static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
+static TOTAL: AtomicUsize = AtomicUsize::new(0);
 
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOCATED.fetch_add(layout.size(), Ordering::Relaxed);
+        TOTAL.fetch_add(layout.size(), Ordering::Relaxed);
         System.alloc(layout)
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
@@ -29,6 +37,7 @@ unsafe impl GlobalAlloc for Counting {
     }
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         ALLOCATED.fetch_add(new_size, Ordering::Relaxed);
+        TOTAL.fetch_add(new_size.saturating_sub(layout.size()), Ordering::Relaxed);
         ALLOCATED.fetch_sub(layout.size(), Ordering::Relaxed);
         System.realloc(ptr, layout, new_size)
     }
@@ -89,6 +98,9 @@ struct Options {
     two_way: bool,
     simple: bool,
     ch: bool,
+    arc_flags: usize,
+    reps: usize,
+    weights: bool,
 }
 
 fn ms(t: Instant) -> f64 {
@@ -145,6 +157,14 @@ fn run(size: usize, o: &Options) {
         );
     }
 
+    let mut arc_flags_time = 0.0;
+    if o.arc_flags > 0 {
+        g.enable_arc_flags(o.arc_flags);
+        let watch = Instant::now();
+        g.precompute_arc_flags();
+        arc_flags_time = ms(watch);
+    }
+
     let watch = Instant::now();
     g.set_max_detour_ratio(o.ratio);
     g.set_simple_paths_only(o.simple);
@@ -161,20 +181,61 @@ fn run(size: usize, o: &Options) {
     let mut p = g.find_shortest_path_by_index(from * size + from, to * size + to);
     let repeated = ms(watch);
 
-    let watch = Instant::now();
+    // Steady state: the same query again, reps times
+    let mut warm = vec![repeated];
+    for i in 0..o.reps {
+        let watch = Instant::now();
+        p = g.find_shortest_path_by_index(from * size + from, to * size + to);
+        if i == 0 {
+            warm.clear();
+        }
+        warm.push(ms(watch));
+    }
+    warm.sort_by(f64::total_cmp);
+
+    let allocated = TOTAL.load(Ordering::Relaxed);
     let mut last = p.weight();
     let mut found = usize::from(p.is_valid());
-    for _ in 1..o.k {
-        if !p.is_valid() {
-            break;
-        }
-        p = g.find_next_shortest_path();
-        if p.is_valid() {
-            last = p.weight();
+    let next = if o.weights {
+        // Weights without path objects: a new enumeration; the clock starts at its first result
+        found = 0;
+        let mut watch = Instant::now();
+        for weight in g.path_weights_by_index(from * size + from, to * size + to) {
+            if found == 0 {
+                watch = Instant::now();
+            }
+            last = weight;
             found += 1;
+            if found >= o.k {
+                break;
+            }
         }
-    }
-    let next = ms(watch);
+        if found > 0 {
+            ms(watch)
+        } else {
+            0.0
+        }
+    } else {
+        let watch = Instant::now();
+        for _ in 1..o.k {
+            if !p.is_valid() {
+                break;
+            }
+            p = g.find_next_shortest_path();
+            if p.is_valid() {
+                last = p.weight();
+                found += 1;
+            }
+        }
+        ms(watch)
+    };
+    eprintln!(
+        "stats: warm_median_ms={:.3} warm_min_ms={:.3} gc_count=0 gc_pause_ms=0.00 alloc_mb={:.1} arcflags_ms={:.0}",
+        warm[warm.len() / 2],
+        warm[0],
+        (TOTAL.load(Ordering::Relaxed) - allocated) as f64 / 1e6,
+        arc_flags_time
+    );
     println!(
         "| {size}x{size} | {} | {} | {build_time:.1} ms | {memory:.1} MB | {first:.1} ms | {repeated:.1} ms | {next:.1} ms | {found} | {last} |",
         size * size,
@@ -191,6 +252,9 @@ fn main() {
         two_way: false,
         simple: false,
         ch: false,
+        arc_flags: 0,
+        reps: 0,
+        weights: false,
     };
     let mut sizes = Vec::new();
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -205,6 +269,15 @@ fn main() {
             "--two-way" => o.two_way = true,
             "--simple" => o.simple = true,
             "--ch" => o.ch = true,
+            "--weights" => o.weights = true,
+            "--arc-flags" => {
+                i += 1;
+                o.arc_flags = args[i].parse().unwrap();
+            }
+            "--reps" => {
+                i += 1;
+                o.reps = args[i].parse().unwrap();
+            }
             "--build" => {
                 i += 1;
                 o.build = args[i].clone();
@@ -221,7 +294,7 @@ fn main() {
         sizes = vec![50, 100, 200];
     }
     println!(
-        "{}{}, build: {}{}{}{}",
+        "{}{}, build: {}{}{}{}{}{}",
         if o.local {
             "Local query (nearby vertices in the middle of the grid)"
         } else {
@@ -235,7 +308,13 @@ fn main() {
         o.build,
         if o.two_way { ", two-way streets" } else { "" },
         if o.simple { ", SimplePathsOnly" } else { "" },
-        if o.ch { ", contraction hierarchy" } else { "" }
+        if o.ch { ", contraction hierarchy" } else { "" },
+        if o.arc_flags > 0 {
+            format!(", arc flags ({} regions)", o.arc_flags)
+        } else {
+            String::new()
+        },
+        if o.weights { ", weights only" } else { "" }
     );
     println!("| grid | vertices | edges | build graph | memory | first path | first path (repeated query) | next paths | paths found | weight of last path |");
     println!("|---|---|---|---|---|---|---|---|---|---|");

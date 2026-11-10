@@ -6,6 +6,14 @@ rust-version = "1.80"
 description = "k shortest paths (Eppstein, Yen/Lawler) with corridor, arc flags and contraction hierarchy (PHAST)"
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/NickDinges/k-shortest-path"
+homepage = "https://github.com/NickDinges/k-shortest-path"
+documentation = "https://docs.rs/eppstein"
+keywords = ["graph", "shortest-path", "k-shortest-paths", "routing", "eppstein"]
+categories = ["algorithms", "data-structures"]
+# The tests read the golden data shared with the C# and Go versions, which lies outside this
+# folder; they run from a checkout of the repository, not from the published package
+exclude = ["tests/"]
 
 [dependencies]
 

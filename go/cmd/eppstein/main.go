@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/nickdinges/k-shortest-path/go/eppstein"
+	"github.com/nickdinges/k-shortest-path/go/v2/eppstein"
 )
 
 func usage() {

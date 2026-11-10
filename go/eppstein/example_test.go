@@ -3,7 +3,7 @@ package eppstein_test
 import (
 	"fmt"
 
-	"github.com/nickdinges/k-shortest-path/go/eppstein"
+	"github.com/nickdinges/k-shortest-path/go/v2/eppstein"
 )
 
 // Five places connected by one-way roads, weights are minutes.

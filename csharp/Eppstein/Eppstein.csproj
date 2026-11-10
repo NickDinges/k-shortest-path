@@ -14,11 +14,22 @@
     <PackageId>Eppstein.KShortestPaths</PackageId>
     <Version>2.0.0</Version>
     <Authors>Nick Dinges</Authors>
-    <Description>k shortest paths (Eppstein's algorithm) with detour corridor, arc flags, CSV/DIMACS import and Graphviz output.</Description>
+    <Description>k shortest paths: Eppstein's algorithm, simple paths with Yen and Lawler, detour corridor, arc flags, contraction hierarchy (PHAST), CSV/DIMACS import and Graphviz output.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageTags>graph;shortest-path;k-shortest-paths;eppstein;routing</PackageTags>
+    <PackageTags>graph;shortest-path;k-shortest-paths;eppstein;yen;routing;contraction-hierarchies</PackageTags>
+    <PackageProjectUrl>https://github.com/NickDinges/k-shortest-path</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/NickDinges/k-shortest-path</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <!-- Source link and symbol package, so that users can step into the library -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Eppstein.Tests" />
   </ItemGroup>
