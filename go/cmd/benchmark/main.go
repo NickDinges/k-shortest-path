@@ -2,7 +2,12 @@
 // and Rust (rust/src/bin/benchmark.rs) programs: same generator (SplitMix64, seed 1), same options,
 // same output, so the last column (weight of the last path) must match across the languages.
 //
-//	go run ./cmd/benchmark [size...] [--k N] [--local] [--ratio R] [--build strings|index|dimacs] [--two-way] [--simple] [--ch]
+//	go run ./cmd/benchmark [size...] [--k N] [--local] [--ratio R] [--build strings|index|dimacs] [--two-way] [--simple] [--ch] [--arc-flags N] [--reps N] [--weights]
+//
+// --reps N repeats the first-path query N more times in the same process (steady state), --weights
+// enumerates only the weights of the next paths, --arc-flags N enables arc flags with N regions.
+// A "stats:" line on standard error reports the steady-state times and the garbage collections,
+// their pause time and the bytes allocated while the next paths were enumerated.
 //
 // Memory is the live heap after a garbage collection, after the first query.
 package main
@@ -12,6 +17,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +80,8 @@ type options struct {
 	local, twoWay, simple, ch bool
 	ratio                     float64
 	build                     string
+	arcFlags, reps            int
+	weights                   bool
 }
 
 func ms(start time.Time) float64 { return float64(time.Since(start).Nanoseconds()) / 1e6 }
@@ -134,6 +142,14 @@ func run(size int, o options) {
 		fmt.Fprintf(os.Stderr, "%dx%d: contraction %.0f ms, %d shortcuts\n", size, size, ms(start), g.ContractionHierarchyShortcuts())
 	}
 
+	arcFlagsTime := 0.0
+	if o.arcFlags > 0 {
+		g.EnableArcFlags(o.arcFlags)
+		start = time.Now()
+		g.PrecomputeArcFlags()
+		arcFlagsTime = ms(start)
+	}
+
 	start = time.Now()
 	g.SetMaxDetourRatio(o.ratio)
 	g.SetSimplePathsOnly(o.simple)
@@ -149,19 +165,53 @@ func run(size int, o options) {
 	p := g.FindShortestPathByIndex(from*size+from, to*size+to)
 	repeated := ms(start)
 
-	start = time.Now()
-	last, found := p.Weight(), 0
-	if p.IsValid() {
-		found = 1
-	}
-	for i := 1; i < o.k && p.IsValid(); i++ {
-		p = g.FindNextShortestPath()
-		if p.IsValid() {
-			last = p.Weight()
-			found++
+	// Steady state: the same query again, reps times
+	warm := []float64{repeated}
+	for i := 0; i < o.reps; i++ {
+		start = time.Now()
+		p = g.FindShortestPathByIndex(from*size+from, to*size+to)
+		if i == 0 {
+			warm = warm[:0]
 		}
+		warm = append(warm, ms(start))
 	}
-	next := ms(start)
+	slices.Sort(warm)
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	last, found, next := p.Weight(), 0, 0.0
+	if o.weights {
+		// Weights without path objects: a new enumeration; the clock starts at its first result
+		for weight := range g.PathWeightsByIndex(from*size+from, to*size+to) {
+			if found == 0 {
+				start = time.Now()
+			}
+			last = weight
+			if found++; found >= o.k {
+				break
+			}
+		}
+		if found > 0 {
+			next = ms(start)
+		}
+	} else {
+		start = time.Now()
+		if p.IsValid() {
+			found = 1
+		}
+		for i := 1; i < o.k && p.IsValid(); i++ {
+			p = g.FindNextShortestPath()
+			if p.IsValid() {
+				last = p.Weight()
+				found++
+			}
+		}
+		next = ms(start)
+	}
+	runtime.ReadMemStats(&after)
+	fmt.Fprintf(os.Stderr, "stats: warm_median_ms=%.3f warm_min_ms=%.3f gc_count=%d gc_pause_ms=%.2f alloc_mb=%.1f arcflags_ms=%.0f\n",
+		warm[len(warm)/2], warm[0], after.NumGC-before.NumGC, float64(after.PauseTotalNs-before.PauseTotalNs)/1e6,
+		float64(after.TotalAlloc-before.TotalAlloc)/1e6, arcFlagsTime)
 	fmt.Printf("| %dx%d | %d | %d | %.1f ms | %.1f MB | %.1f ms | %.1f ms | %.1f ms | %d | %d |\n",
 		size, size, size*size, len(edges), buildTime, memory, first, repeated, next, found, last)
 	runtime.KeepAlive(g)
@@ -184,6 +234,14 @@ func main() {
 			o.simple = true
 		case "--ch":
 			o.ch = true
+		case "--weights":
+			o.weights = true
+		case "--arc-flags":
+			i++
+			o.arcFlags, _ = strconv.Atoi(args[i])
+		case "--reps":
+			i++
+			o.reps, _ = strconv.Atoi(args[i])
 		case "--build":
 			i++
 			o.build = args[i]
@@ -217,6 +275,12 @@ func main() {
 	}
 	if o.ch {
 		header += ", contraction hierarchy"
+	}
+	if o.arcFlags > 0 {
+		header += fmt.Sprintf(", arc flags (%d regions)", o.arcFlags)
+	}
+	if o.weights {
+		header += ", weights only"
 	}
 	fmt.Println(header)
 	fmt.Println("| grid | vertices | edges | build graph | memory | first path | first path (repeated query) | next paths | paths found | weight of last path |")
