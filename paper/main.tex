@@ -34,6 +34,8 @@
 \newcommand{\cs}{C\#}
 \newcommand{\eg}{e.\,g.\@\xspace}
 \newcommand{\ie}{i.\,e.\@\xspace}
+% \val{scenario/language/field}: a measured value from paper/data/*.csv (see scripts/make_tables.py)
+\newcommand{\val}[1]{\ifcsname val@#1\endcsname\csname val@#1\endcsname\else\errmessage{Unknown value: #1}\fi}
 
 \input{tables/numbers}
 
@@ -50,22 +52,24 @@ under the author's direction. See \cref{sec:ai}.}}
 
 \begin{abstract}
 We report on turning a small \cs{} implementation of Eppstein's $k$ shortest paths algorithm, written in 2010, into a
-library that combines several modern techniques: Eppstein's enumeration with lazily built persistent sidetrack
-heaps, a detour corridor that bounds both the shortest-path tree and the enumeration, Yen's algorithm with Lawler's
+library that combines several known techniques: Eppstein's enumeration with lazily built persistent sidetrack
+heaps, a detour bound that limits both the shortest-path tree and the enumeration, Yen's algorithm with Lawler's
 improvement and A* spur searches for loopless paths, arc flags with external graph partitions, and a contraction
 hierarchy whose PHAST sweep computes the full shortest-path tree. The library exists in three languages with the same
 interface and results: \cs{} and Go, which are garbage collected, and Rust, which is not. All three share golden test
 data and an identical benchmark, so their timings can be compared on exactly the same graphs.
-On grid graphs with up to one million vertices, all three implementations are within a factor of
-\NumMaxRatioRepeated{} of each other for the shortest-path tree. Rust is the fastest in most scenarios, by 10--40\%.
-The largest gaps (up to 4$\times$ on small inputs) come from .NET's tiered JIT compilation, not from garbage
-collection: disabling Go's collector or making .NET's rare has no measurable effect, because all three use the
-same flat, allocation-free data layout. The algorithmic choices dominate by far: the original 2010
+On synthetic grid graphs with up to one million vertices, the steady-state time of the shortest-path tree differs by
+at most a factor of \NumMaxRatioTreeAll{} between the three implementations, and no language is fastest
+everywhere. Measured naively, on the second query of a process, the gap is up to \NumMaxRatioSecond$\times$; this is
+.NET's tiered JIT compilation, not garbage collection. Garbage collection itself is a small cost here: enumerating
+$10^5$ paths allocates about \val{eppstein-1000-k100k/go/alloc}\,MB, but the collectors pause for only
+\val{eppstein-1000-k100k/go/pause}\,ms (Go) and \val{eppstein-1000-k100k/cs/pause}\,ms (\cs{}) of
+\val{eppstein-1000-k100k/range/next:s}\,s. The algorithmic choices dominate by far: the original 2010
 implementation needs \NumVOneFirst{} for the first path on a $\NumVOneSize\times\NumVOneSize$ acyclic grid where the
-current one needs \NumVTwoFirst, and a corridor turns a \NumLocalRepeated{} query into \NumLocalRatioRepeated.
+current one needs \NumVTwoFirst, and a detour bound turns a \NumLocalRepeated{} query into \NumLocalRatioRepeated.
 Finally, we describe how the work was done: the whole transformation, including this paper, was generated with
-Claude in about two days, directed by the author and based on the author's old code and on ideas from a domain expert. We report
-what worked, what the AI got wrong, and how tests caught it.
+Claude in about three days, directed by the author and based on the author's old code and on ideas from a domain
+expert. We report what worked, what the AI got wrong, and how tests and a critical review of this paper caught it.
 \end{abstract}
 
 \section{Introduction}
@@ -74,75 +78,46 @@ The $k$ shortest paths problem asks for the $k$ shortest paths between two verti
 directed graph, in order of weight. It appears in route planning (alternatives to the best route), network routing,
 and as a building block of optimization and language-processing pipelines. There are two main variants: paths may
 repeat vertices (\emph{walks}), or they must be \emph{simple} (loopless). For the first variant,
-Eppstein~\cite{eppstein1998} gave an algorithm that, after one shortest-path tree computation, produces each further
-path in $O(\log k)$ time (implicitly) and is still the reference today. For simple paths, Yen's
-algorithm~\cite{yen1971} with Lawler's improvement~\cite{lawler1972} is the classic choice; sidetrack-based algorithms
-are a recent improvement~\cite{kurz2016,alzoobi2023}.
+Eppstein~\cite{eppstein1998} gave an algorithm that, after one shortest-path tree computation, produces the $k$
+shortest paths in order in $O(m+n\log n+k\log k)$ total time, in an implicit representation; it is still the
+reference today. For simple paths, Yen's algorithm~\cite{yen1971} with Lawler's improvement~\cite{lawler1972} is the
+classic choice, with $O(kn(m+n\log n))$ time in the worst case; sidetrack-based algorithms are a recent
+improvement in practice~\cite{kurz2016,alzoobi2023}.
 
-This paper is an engineering report. Its starting point is a 486-line \cs{} implementation of Eppstein's idea
-written by the author in 2010. It computed correct paths on the example of Eppstein's paper, but it enumerated all
-paths eagerly in the first query, its priority queue was a sorted list, and it did not terminate on graphs with
-cycles. In November 2026 the author ran an experiment: could Claude, an AI model used as a coding agent, turn it into a
-modern library? The project grew in small steps, each one requested by the author: fix the non-termination, port to
-Linux, add Graphviz output, port to Go, make it fast, add simple paths, add arc flags with real partitions, add
-contraction hierarchies, port to Rust, and finally write this paper.
+This paper is an engineering report, not a new algorithm. Its starting point is a 486-line \cs{} implementation of
+Eppstein's idea written by the author in 2010. It computed correct paths on the example of Eppstein's paper, but it
+enumerated all paths eagerly in the first query, its priority queue was a sorted list, and it did not terminate on
+graphs with cycles. In November 2026 the author ran an experiment: could Claude, an AI model used as a coding agent,
+turn it into a modern library? The project grew in small steps, each one requested by the author: fix the
+non-termination, port to Linux, add Graphviz output, port to Go, make it fast, add simple paths, add arc flags with
+real partitions, add contraction hierarchies, port to Rust, write this paper, and finally review the paper
+critically.
 
 \paragraph{Contributions.}
 \begin{itemize}
-  \item A combination of techniques for $k$ shortest paths in one library (\cref{sec:algorithms}): lazy Eppstein
-        enumeration with persistent leftist heaps, a detour corridor that bounds the tree \emph{and} the
+  \item An exact combination of known techniques for $k$ shortest paths in one library (\cref{sec:algorithms}): lazy
+        Eppstein enumeration with persistent leftist heaps, a detour bound that limits the tree \emph{and} the
         enumeration, Yen--Lawler with A* spur searches guided by the exact distances of the shortest-path tree, arc
-        flags with partitions from external partitioners, and a contraction hierarchy with PHAST for the tree. All
-        techniques keep the results exact; every combination is tested against brute force.
+        flags with partitions from external partitioners, and a contraction hierarchy with PHAST for the tree. None
+        of the techniques is new; we explain each of them from the definitions onward, describe what has to be
+        adapted to combine them (the tree must be rebuilt after PHAST; arc flags cannot skip vertices), and test
+        every combination against brute force.
   \item Three implementations with identical interfaces and results in \cs, Go and Rust, sharing golden test data,
-        and an identical benchmark (same pseudo-random graphs, same output), which allows a controlled comparison
-        of garbage-collected and non-garbage-collected languages on the same algorithms and data layout
-        (\cref{sec:languages,sec:experiments}).
+        and an identical benchmark (same pseudo-random graphs, same output). This allows a comparison of two
+        garbage-collected languages and one without a collector on the same algorithms and nearly the same data
+        layout, including direct measurements of allocation, collections and JIT warm-up
+        (\cref{sec:languages,sec:experiments,sec:discussion}).
   \item A case study of AI-assisted algorithm engineering (\cref{sec:ai}): which inputs came from the human (an old
-        algorithm, short requests, expert ideas), what Claude did, and where it failed.
+        algorithm, short requests, expert ideas), what Claude did, and where it failed, in the code and in an
+        earlier version of this paper.
 \end{itemize}
 
-\section{Background and related work}\label{sec:related}
+\section{The algorithms, step by step}\label{sec:algorithms}
 
-\paragraph{Eppstein's algorithm.}
-Let $d(v)$ be the distance from $v$ to $t$, computed by one run of Dijkstra's algorithm~\cite{dijkstra1959} on the
-reversed graph; the best outgoing edges form the shortest-path tree $T$. Every edge $e=(u,v)\notin T$ is a
-\emph{sidetrack} with non-negative \emph{delta} $\delta(e)=w(e)+d(v)-d(u)$, the extra cost of taking $e$ instead of
-following $T$. Every $s$--$t$ walk is uniquely described by its sequence of sidetracks, and its weight is
-$d(s)+\sum\delta$. Eppstein organizes the sidetracks reachable from each vertex in heaps $H(v)$ that share structure
-along tree paths (persistence~\cite{driscoll1989}), and explores the resulting \emph{path graph} best-first. Each
-extracted path creates at most three new candidates. Jiménez and Marzal~\cite{jimenez1999} showed that a lazy
-variant, which builds heaps only where needed, is faster in practice.
-
-\paragraph{Simple paths.}
-Yen's algorithm~\cite{yen1971} derives each new simple path from a previous one by fixing a prefix (the \emph{root})
-and computing the best \emph{spur} from the root's last vertex, avoiding the root's vertices and the edges already
-used by earlier paths with the same root. Lawler~\cite{lawler1972} observed that only spurs from the deviation vertex
-onward are needed. Kurz and Mutzel~\cite{kurz2016} and Al Zoobi et al.~\cite{alzoobi2023} combine Eppstein's
-sidetrack idea with simplicity checks and avoid many spur searches.
-
-\paragraph{Speed-up techniques for shortest paths.}
-Route planning has a rich toolbox~\cite{bast2016}. \emph{Arc flags}~\cite{lauther2004,moehring2006} partition the
-graph into regions and mark, for every edge and region, whether the edge lies on some shortest path into that region.
-\emph{Contraction hierarchies} (CH)~\cite{geisberger2008} order the vertices by importance and add shortcuts, so
-that every shortest path has an equivalent up--down path. \emph{PHAST}~\cite{delling2013phast} computes a full
-shortest-path tree on a CH with one upward search and a linear sweep; RPHAST~\cite{delling2011rphast} restricts it
-to a target set. \emph{Customizable CH}~\cite{dibbelt2016} separate a metric-independent preprocessing from fast
-re-customization of weights. Alternative routes~\cite{abraham2013} and $k$ shortest paths with limited
-overlap~\cite{chondrogiannis2020} address a related problem, where paths must be sufficiently different. We found
-no work that combines Eppstein's enumeration with CH/PHAST; since Eppstein needs the distances of all vertices, a
-point-to-point CH query is not enough, but PHAST is (\cref{sec:ch}).
-
-\paragraph{Garbage collection.}
-Hertz and Berger~\cite{hertz2005} quantified that garbage collection can match explicit memory management in speed
-if it is given several times more memory. Our setting is different: all three implementations avoid allocation in
-their hot loops, so the comparison is mostly one of compilers, runtime checks and data layout
-(\cref{sec:discussion}).
-
-\section{Algorithms and their combination}\label{sec:algorithms}
-
-\Cref{fig:pipeline} shows how a query proceeds. All techniques keep the results exact: the same paths with the same
-weights are returned (paths of equal weight may come in a different order).
+This section explains every algorithm the library uses, from the definitions onward, so that the paper can be read
+without the original articles. Readers who know Eppstein's algorithm, Yen's algorithm and contraction hierarchies can
+skip to the paragraphs marked \emph{In the library}, which say what our implementation does differently.
+\Cref{fig:pipeline} shows how the parts work together in a query.
 
 \begin{figure}[t]
 \centering
@@ -150,7 +125,7 @@ weights are returned (paths of equal weight may come in a different order).
   box/.style={draw,rounded corners,align=center,minimum height=0.9cm,inner sep=4pt,fill=#1},
   box/.default=white, ->, >=stealth]
   \node[box=blue!8] (pre) {Optional preprocessing\\ arc flags / CH};
-  \node[box=green!8, right=of pre] (tree) {Shortest-path tree to $t$\\ Dijkstra (corridor, arc flags)\\ or PHAST};
+  \node[box=green!8, right=of pre] (tree) {Shortest-path tree to $t$\\ Dijkstra (bounded, arc flags)\\ or PHAST};
   \node[box=orange!10, right=of tree, yshift=0.75cm] (epp) {Eppstein: lazy\\ persistent heaps};
   \node[box=orange!10, right=of tree, yshift=-0.75cm] (yen) {Yen--Lawler:\\ A* spurs, $h=d$};
   \node[box, right=of epp, yshift=-0.75cm] (out) {paths in order\\ of weight};
@@ -158,58 +133,329 @@ weights are returned (paths of equal weight may come in a different order).
   \draw (epp) -- (out); \draw (yen) -- (out);
 \end{tikzpicture}
 \caption{A query. The tree supplies the distances $d(v)$ to the goal, which Eppstein uses for the sidetrack deltas and
-Yen--Lawler as exact A* lower bounds. The corridor bounds the tree, the enumeration and the spur searches.}
+Yen--Lawler as exact A* lower bounds. The detour bound limits the tree, the enumeration and the spur searches.}
 \label{fig:pipeline}
 \end{figure}
 
-\subsection{Data layout}
+\subsection{Definitions}\label{sec:definitions}
+A directed graph $G=(V,E)$ has $n$ vertices and $m$ edges. An edge $e=(u,v)$ leads from its \emph{tail} $u$ to its
+\emph{head} $v$ and has a weight $w(e)\ge 0$; several edges may connect the same two vertices. A \emph{walk} from $s$
+to $t$ is a sequence of edges in which each edge starts where the previous one ends; its weight is the sum of its
+edge weights. A walk may visit a vertex several times. A walk that visits no vertex twice is a \emph{simple path}.
+We say ``path'' for both where the difference does not matter. The \emph{distance} $d(u,v)$ is the smallest weight of
+a walk from $u$ to $v$, and infinite if there is none. Given $s$, $t$ and $k$, the \emph{$k$ shortest paths problem}
+asks for $k$ walks from $s$ to $t$ of smallest weight, in order of weight; the \emph{$k$ shortest simple paths
+problem} asks the same for simple paths. If a graph has a cycle that can be reached from $s$ and from which $t$ can
+be reached, it has infinitely many walks from $s$ to $t$ but only finitely many simple paths.
+
+\subsection{Dijkstra's algorithm and the shortest-path tree}\label{sec:dijkstra}
+All algorithms below start from the distances of all vertices \emph{to the goal}: $d(v)=d(v,t)$.
+Dijkstra's algorithm~\cite{dijkstra1959} computes them. It keeps a tentative distance for every vertex, initially
+$0$ for $t$ and infinite for all others, and a priority queue of vertices ordered by tentative distance. It
+repeatedly removes the vertex $v$ with the smallest tentative distance, which is then final (\emph{settled}), and
+\emph{relaxes} every edge $(u,v)$ entering $v$: if $w(u,v)+d(v)$ is smaller than the tentative distance of $u$, it
+becomes the new one, and $(u,v)$ is remembered as the \emph{tree edge} of $u$. Because weights are not negative, a
+settled distance can never be improved later. Since the search starts at $t$ and follows edges backwards, we call it
+a \emph{backward} search. With a binary heap as priority queue it takes $O((n+m)\log n)$ time.
+
+The tree edges form the \emph{shortest-path tree} $T$: every vertex that can reach $t$ has exactly one tree edge,
+to a vertex we call $\mathrm{next}(v)$, and following tree edges from any vertex leads to $t$ along a shortest path.
+An edge $(u,v)$ is \emph{tight} if $d(u)=w(u,v)+d(v)$, \ie{} if it lies on some shortest path to $t$; tree edges are
+tight, and for every edge $d(u)\le w(u,v)+d(v)$.
+
+\subsection{Eppstein's algorithm: paths as sequences of sidetracks}\label{sec:eppstein}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[>=stealth, every node/.style={font=\small}, v/.style={circle,draw,minimum size=6.5mm,inner sep=0pt}]
+  \node[v] (s) at (0,0) {$s$};
+  \node[v] (a) at (2.6,1.5) {$a$};
+  \node[v] (b) at (2.6,-1.5) {$b$};
+  \node[v] (t) at (5.2,0) {$t$};
+  \draw[->,very thick] (s) -- node[above left=-2pt] {1} (a);
+  \draw[->,very thick] (a) -- node[above right=-2pt] {1} (t);
+  \draw[->,very thick] (b) to[bend left=35] node[left] {1} (a);
+  \draw[->,dashed] (a) to[bend left=35] node[right] {1\;($\delta=2$)} (b);
+  \draw[->,dashed] (s) -- node[below left=-2pt] {2\;($\delta=2$)} (b);
+  \draw[->,dashed] (b) -- node[below right=-2pt] {3\;($\delta=1$)} (t);
+  \node[anchor=west,align=left] at (6.3,0) {\begin{tabular}{@{}lll@{}}
+    \toprule vertex & $d(v)$ & $H(v)$, smallest first \\ \midrule
+    $t$ & 0 & empty \\
+    $a$ & 1 & $(a,b)$ \\
+    $b$ & 2 & $(b,t)$, $(a,b)$ \\
+    $s$ & 2 & $(a,b)$, $(s,b)$ \\ \bottomrule
+  \end{tabular}};
+\end{tikzpicture}
+
+\medskip
+\begin{tabular}{@{}rlll@{}}
+\toprule
+ & sidetrack sequence & walk & weight \\
+\midrule
+1 & (none) & $s\,a\,t$ & $2$ \\
+2 & $(a,b)$ & $s\,a\,b\,a\,t$ & $2+2=4$ \\
+3 & $(s,b)$ & $s\,b\,a\,t$ & $2+2=4$ \\
+4 & $(s,b),(b,t)$ & $s\,b\,t$ & $2+2+1=5$ \\
+5 & $(a,b),(b,t)$ & $s\,a\,b\,t$ & $2+2+1=5$ \\
+6 & $(s,b),(a,b)$ & $s\,b\,a\,b\,a\,t$ & $2+2+2=6$ \\
+\bottomrule
+\end{tabular}
+\caption{Example. Thick edges: the shortest-path tree to $t$; dashed edges: sidetracks with their deltas. $H(v)$
+contains the sidetracks that leave the tree path from $v$ to $t$. Below: the six shortest walks and the sidetracks
+that describe them. The graph has a cycle ($a\to b\to a$), so there are infinitely many walks.}
+\label{fig:example}
+\end{figure}
+
+\paragraph{Sidetracks.} Fix the tree $T$ to the goal $t$. An edge $e=(u,v)$ that is not a tree edge is called a
+\emph{sidetrack}. Its \emph{delta}
+\[\delta(e)=w(e)+d(v)-d(u)\;\ge 0\]
+is the extra weight of leaving $u$ over $e$ and continuing optimally, compared with the shortest path from $u$. Take
+any walk from $s$ to $t$ and add up the deltas of all its edges (tree edges have delta $0$): the distances cancel
+in pairs, and the sum is the weight of the walk minus $d(s)$. Hence
+\[\text{weight of a walk}=d(s)+\sum_{\text{its sidetracks }e}\delta(e).\]
+A walk is also determined by its sequence of sidetracks alone: between two sidetracks, and after the last one, it
+has no choice but to follow tree edges. In \cref{fig:example}, the sidetrack sequence $(s,b),(b,t)$ means: take
+$(s,b)$, then, standing at $b$, immediately take $(b,t)$; its weight is $d(s)+2+1=5$. Not every sequence is valid:
+after a sidetrack with head $v$, the next sidetrack must start at a vertex on the tree path from $v$ to $t$. So
+the problem becomes: \emph{enumerate the valid sidetrack sequences in order of their sum of deltas.} The empty
+sequence is the shortest path.
+
+\paragraph{The heaps $H(v)$.} For a vertex $v$, let $H(v)$ be the set of sidetracks whose tail lies on the tree path
+from $v$ to $t$; these are exactly the sidetracks that may follow a sidetrack with head $v$ (and $H(s)$ contains
+the possible first sidetracks). To find the best ones quickly, $H(v)$ is stored as a \emph{heap}: a binary tree
+whose nodes hold one sidetrack each, such that the delta of a node is never larger than the deltas of its children.
+The smallest element is at the root, and everything below a node is at least as large as the node.
+
+Storing each $H(v)$ separately would need far too much space, since $H(v)$ consists of the sidetracks leaving $v$
+itself plus all of $H(\mathrm{next}(v))$. Eppstein's key idea is to let the heaps share nodes: $H(v)$ is built from
+$H(\mathrm{next}(v))$ by adding the sidetracks of $v$ \emph{without changing} $H(\mathrm{next}(v))$, which other
+vertices still use. A data structure whose old versions stay valid after an update is called
+\emph{persistent}~\cite{driscoll1989}. Here it is obtained by copying the few nodes an update would change instead
+of overwriting them.
+
+\paragraph{Enumeration.} A \emph{candidate} is a sidetrack sequence. The algorithm keeps a priority queue of
+candidates ordered by weight, starting with the empty sequence, and repeats: remove the lightest candidate,
+output it as the next path, and insert its \emph{successors}. For a candidate whose last sidetrack $e$ was taken from
+a node $x$ of the heap $H(v)$, the successors are
+\begin{itemize}
+  \item \emph{replace:} the same sequence with $e$ replaced by the sidetrack of a child of $x$ in the heap (at most
+        two successors), and
+  \item \emph{append:} the sequence extended by the root of $H(\mathrm{head}(e))$, the best sidetrack that can
+        follow $e$ (at most one successor).
+\end{itemize}
+The empty sequence has one successor, the root of $H(s)$. Two facts make this correct. A successor is never lighter
+than its candidate, because a heap child is not smaller than its parent and deltas are not negative; so when a
+candidate is removed from the queue, no lighter one can appear later. And every valid sequence is generated exactly
+once: its last sidetrack is one node of the heap that belongs to the sequence before it, and there is exactly one
+way down from the root of that heap to this node. In the example, the candidate $(a,b)$, the root of $H(s)$,
+produces $(s,b)$ by replacement and $(a,b),(b,t)$ by appending the root of $H(b)$, the heap at the head of
+$(a,b)$. Each output costs one removal and
+at most three insertions, so producing the $k$ lightest sequences takes $O(k\log k)$ time after the tree and the
+heaps exist. The graph whose vertices are the heap nodes and whose edges are these successor relations is
+Eppstein's \emph{path graph}; with all heaps built in advance in a refined way, his algorithm takes
+$O(m+n\log n+k\log k)$ time in total~\cite{eppstein1998}.
+
+\paragraph{In the library: lazy heaps with leftist merging.}
+Building the heaps of all vertices in advance is wasteful when only a few paths are requested. Jiménez and
+Marzal~\cite{jimenez2003} build $H(v)$ only when the enumeration first needs it, and we follow them: $H(v)$ is
+requested for $v=s$ and for the heads of sidetracks of extracted candidates; if $H(\mathrm{next}(v))$ does not exist
+yet, it is built first. The library does this iteratively, from the first vertex on the tree path that already has
+a heap back towards $v$, so long tree paths cause no deep recursion. The first candidate therefore needs the
+heaps of all vertices on the tree path from $s$ to $t$.
+
+For the heaps we use \emph{leftist heaps}~\cite{crane1972}. The \emph{rank} of a node is the number of nodes on the
+path that always goes to the right child, down to a missing child. A heap is leftist if at every node the rank
+of the left child is at least the rank of the right child; then the rightmost path of a heap with $N$ nodes has at
+most $\log_2(N+1)$ nodes. Two leftist heaps are \emph{merged} by comparing the roots, keeping the smaller one as the
+new root, merging its right subtree with the other heap in the same way, and finally swapping the two children if
+the right one has the larger rank. Only nodes on the two rightmost paths are touched. For persistence, the merge
+writes each touched node as a new copy and leaves the old one unchanged, so both input heaps remain valid and the
+result shares all untouched nodes with them. Eppstein keeps the sidetracks of each vertex in a small heap of their
+own and inserts only its root into a balanced heap along the tree path. We simplify this: the sidetracks leaving
+$v$ are sorted by delta and linked into a chain through their left children (a valid leftist heap whose rightmost
+path has length one), and this chain is merged into $H(\mathrm{next}(v))$. The merge copies $O(\log m)$ nodes, so
+$H(v)$ costs $O(\deg(v)\log\deg(v)+\log m)$ time and $O(\log m)$ additional nodes.
+
+A candidate is stored as a pointer to its parent candidate and one heap node, so creating one costs $O(1)$, and its
+weight is the weight of the sequence it extends plus one delta. To output a path as a list
+of edges, the library collects the sidetracks by following the parent pointers and then walks from $s$ to $t$,
+taking the next sidetrack where its tail is reached and tree edges otherwise. This costs time proportional to the
+length of the path and dominates in practice (\cref{tab:enumeration}); an iterator that returns only the weights
+skips it.
+
+\subsection{Detour bound (``corridor'')}\label{sec:corridor}
+Users rarely want arbitrarily long alternatives. With an absolute or relative detour limit $\Delta$, only paths of
+weight at most $d(s)+\Delta$ are admissible; enumerating them is known as the near-shortest paths
+problem~\cite{byers1984,carlyle2005}. The bound prunes all three stages of a query. A vertex $v$ with
+$d(v)>d(s)+\Delta$ cannot lie on an admissible path, so the backward Dijkstra stops as soon as it would settle a
+vertex beyond the radius $d(s)+\Delta$ (the radius becomes known when $s$ is settled, which happens before any
+vertex farther away than $s$ is settled). In the enumeration, a candidate with $\sum\delta>\Delta$ is not inserted
+into the queue, and since successors are never lighter, nothing is lost. The A* spur searches of
+\cref{sec:yen} stop in the same way. The library calls this the \emph{corridor}. Two remarks put it into
+perspective. First, the region that is searched is a ball around $t$, not an ellipse around the $s$--$t$
+path: the exact condition for a vertex is $d(s,v)+d(v)\le d(s)+\Delta$, which needs forward distances from $s$ as
+well. A bidirectional search, or K*~\cite{aljazzar2011}, which builds the path graph while an A* search explores the
+graph, would search a smaller region; our bound is simply the part that a single backward search gives for free. It
+helps when $s$ and $t$ are close relative to the size of the graph, and not at all when they are far apart. Second,
+with the bound the number of admissible paths is finite even with cycles, provided that no cycle of weight zero
+lies on an admissible walk; a query can then be iterated to its end.
+
+\subsection{Simple paths: Yen's algorithm with Lawler's rule and A*}\label{sec:yen}
+In networks with two-way edges most of the shortest walks are the shortest path plus a small loop (in
+\cref{fig:example}, walks 2 and 6), not real alternatives. With \texttt{SimplePathsOnly}, the library returns
+simple paths only, using a different algorithm, since no way is known to restrict Eppstein's path graph to simple
+paths without checking each walk.
+
+\paragraph{Yen's algorithm.} The first path $P_1$ is the shortest path, which is simple. Every other simple path
+$Q$ from $s$ to $t$ \emph{deviates} from each previously found path somewhere. Yen's algorithm~\cite{yen1971} uses
+this to derive new paths from found ones. Let $P=(v_0=s,v_1,\dots,v_\ell=t)$ be a path that has just been output.
+For each position $i<\ell$, the prefix $(v_0,\dots,v_i)$ is called the \emph{root} and $v_i$ the \emph{spur vertex}.
+The algorithm computes the shortest path from $v_i$ to $t$, the \emph{spur}, in a restricted graph in which
+\begin{itemize}
+  \item the vertices $v_0,\dots,v_{i-1}$ of the root are removed, so that root plus spur is simple, and
+  \item every edge leaving $v_i$ that some already found path with the same root uses next is removed, so that the
+        result differs from all found paths.
+\end{itemize}
+Root plus spur is the best simple path that shares exactly this root with $P$ and then leaves it, and it becomes
+a \emph{candidate}. The next path to output is the lightest candidate found so far, kept in a priority queue.
+The algorithm is correct because the next simple path, whatever it is, shares some root with a found path and
+then leaves all found paths with that root, so it is the best path of one of the restricted problems that have been
+solved. Each output path causes up to $n$ shortest-path computations, which gives $O(kn(m+n\log n))$ time in the
+worst case.
+
+\paragraph{Lawler's rule.} Every path except $P_1$ was created as a candidate from a parent path at some position
+$j$, its \emph{deviation index}: up to $v_j$ it equals its parent. Lawler~\cite{lawler1972} observed that for
+positions $i<j$ the restricted problem is the same one that was already solved when the parent was processed: the
+root is the same, and the new path adds no removed edge there, because at $v_i$ it uses the same edge as its
+parent. Only positions $i\ge j$ need spur computations. This removes duplicate candidates and many searches.
+
+\paragraph{A* with exact distances.} A spur is a point-to-point shortest path, for which Dijkstra's algorithm
+explores much more of the graph than necessary. A* search~\cite{hart1968} runs forward from the spur vertex and
+orders its priority queue by $g(v)+h(v)$, where $g(v)$ is the tentative distance from the spur vertex and $h(v)$ a
+lower bound (\emph{potential}) on the remaining distance to $t$. If $h(u)\le w(u,v)+h(v)$ holds for all edges
+(\emph{consistency}), every vertex is settled at most once and the search may stop when $t$ is settled. The better
+the bound, the fewer vertices are explored. Here an excellent bound is available for free: the distances $d(v)$ of
+the shortest-path tree of the unrestricted graph. Removing vertices and edges can only make distances longer, so
+$d$ is a lower bound in every restricted graph, and it is consistent (\cref{sec:dijkstra}). When the tree path from
+the spur vertex survives the restrictions, the search settles only the vertices of that path; otherwise it explores
+only where the restrictions force a detour.
+
+\paragraph{In the library.} The found paths are stored in a trie (a tree in which each path from the root spells
+the edge sequence of a prefix); the edges to remove at a spur vertex are the children of the root's trie node. The
+tree to $t$ is computed once per query, as for Eppstein. Spurs of a path are generated lazily when the next path
+is requested, so asking for one path costs no spur search. With a detour bound, a spur search stops as soon as the
+smallest $g+h$ in its queue exceeds what an admissible path may still cost. Using the reverse tree to guide or avoid
+spur searches is known~\cite{feng2014,kurz2016}; we do not yet skip the search when the tree path itself is a
+valid spur, which those algorithms do.
+
+\subsection{Arc flags}\label{sec:arcflags}
+The remaining techniques invest preprocessing time to make the shortest-path tree of later queries cheaper. For
+\emph{arc flags}~\cite{lauther2004,moehring2006}, the vertices are partitioned into a small number of
+\emph{regions}. Every edge gets one bit per region; the bit of edge $e$ for region $R$ is set if $e$ lies on a
+shortest path to some vertex of $R$. A search for a goal in region $R$ may then ignore all edges whose bit for $R$
+is not set, because no shortest path to the goal uses them.
+
+The bits are computed as follows. An edge inside $R$ gets the bit for $R$. A shortest path that enters $R$ from
+outside must pass through a \emph{boundary vertex} of $R$, a vertex of $R$ with an incoming edge from another
+region, and up to that vertex it is a shortest path to the boundary vertex. So for every boundary vertex $b$ of $R$,
+one backward Dijkstra from $b$ computes the distances to $b$, and every edge that is tight for these distances
+gets the bit for $R$. The preprocessing costs one Dijkstra run per boundary vertex, which is why partitions with
+few boundary vertices matter.
+
+\paragraph{In the library.} The partition comes from chunks of a breadth-first order (built in), from a string, or
+from an external partitioner such as Mt-KaHyPar~\cite{mtkahypar}, for which the library writes the METIS input
+format. The backward Dijkstra of a query relaxes only edges flagged for the goal's region. Every vertex still gets
+its correct distance, because its shortest path to $t$ consists of flagged edges. But since Eppstein needs the
+distance of \emph{every} vertex that can reach the goal, arc flags cannot skip vertices here, as they do in a
+point-to-point query; they only skip edge relaxations, so the gain is small by construction (\cref{tab:ch}). The
+documentation recommends the detour bound first.
+
+\subsection{Contraction hierarchy and PHAST}\label{sec:ch}
+
+\paragraph{Contraction.} A \emph{contraction hierarchy} (CH)~\cite{geisberger2008} removes the vertices from the graph
+one by one. To \emph{contract} a vertex $v$ means to remove it while preserving all distances between the remaining
+vertices: for every remaining in-neighbor $u$ and out-neighbor $x$ of $v$, if the path $u\to v\to x$ is the only
+shortest path from $u$ to $x$, a \emph{shortcut} edge $(u,x)$ with weight $w(u,v)+w(v,x)$ is added. Whether another
+path of at most that weight exists is decided by a \emph{witness search}, a Dijkstra search from $u$ that avoids
+$v$. It may be cut off after a fixed number of settled vertices; if it then has found no witness, the shortcut is
+added anyway, which costs space but never correctness. The order of contraction defines the \emph{rank} of each
+vertex. A good order contracts unimportant vertices first and keeps the number of shortcuts small; the usual
+heuristic picks the vertex with the smallest \emph{edge difference} (shortcuts added minus edges removed) next.
+
+Let $G^+$ be the original graph plus all shortcuts. Call an edge \emph{upward} if it leads to a vertex of higher
+rank and \emph{downward} otherwise. The construction guarantees that for any two vertices $u$ and $t$ with a path
+between them, $G^+$ contains a shortest path from $u$ to $t$ that first uses only upward edges and then only
+downward edges (an \emph{up--down path}): wherever a shortest path has a vertex that is lower than both its
+neighbors on the path, that vertex was contracted before them, and either a shortcut or a witness path replaces
+the dip. A point-to-point query exploits this with two small searches, one upward from each end.
+
+\paragraph{PHAST.} Eppstein needs the distances of all vertices to $t$, not one. PHAST~\cite{delling2013phast}
+computes them from the hierarchy in two phases.
+\begin{enumerate}
+  \item \emph{Upward search from $t$.} A backward Dijkstra from $t$ that follows only downward edges, backwards. It
+        reaches only vertices of higher rank than $t$, typically a few hundred, and gives each of them the length of
+        the best purely downward path to $t$.
+  \item \emph{Sweep.} All vertices are processed once, in order of descending rank. For each vertex $u$, every
+        upward edge $(u,x)$ is relaxed: $d(u)\leftarrow\min(d(u),w(u,x)+d(x))$.
+\end{enumerate}
+After the sweep every $d(u)$ is correct, by induction over the rank: the shortest up--down path from $u$ is either
+purely downward, and was found in phase 1, or it starts with an upward edge $(u,x)$ and continues with a shortest
+up--down path from $x$, whose distance is already final because $x$ has a higher rank and was processed earlier. The
+sweep needs no priority queue and reads memory in a fixed order, which is why it is much faster than Dijkstra's
+algorithm on graphs with a good hierarchy. RPHAST~\cite{delling2011rphast} restricts the sweep to the vertices that
+matter for a given set of targets, and customizable contraction hierarchies~\cite{dibbelt2016} separate an order
+that depends only on the graph's structure from a fast update for new weights.
+
+\paragraph{In the library.} The contraction order is maintained lazily (a vertex's priority is recomputed when it
+reaches the front of the queue) by edge difference plus the number of already contracted neighbors, which spreads
+the contraction evenly; witness searches have a settled-vertex limit, and of parallel edges only the lightest is
+kept. Vertices are stored in sweep order. Eppstein also needs the tree, not only the distances. Unpacking shortcuts
+is unnecessary: we rebuild the tree from the \emph{original} edges that are tight, breadth-first from $t$. Choosing an
+arbitrary tight edge per vertex would be wrong if the graph has cycles of weight zero, because the chosen edges
+could close such a cycle; the breadth-first order prevents this. This pass over all edges is part of the PHAST
+times we report. With a detour bound the bounded Dijkstra usually visits fewer vertices than PHAST and is used
+instead. For Yen--Lawler the hierarchy accelerates only the one initial tree, not the spur searches. To our
+knowledge, the combination of Eppstein's enumeration with PHAST has not been described before; a point-to-point CH
+query would not be enough for it.
+
+\subsection{Data layout and exactness}
 Vertices and edges are stored in flat arrays (structure of arrays): tail, head, weight and group per edge, and
 compressed adjacency rows by direction, rebuilt lazily after a change. Per-vertex query data (distance, tree edge,
 heap root) live in arrays that are reused across queries: a vertex's entry is valid only if its \emph{stamp} equals
 the current query number, so a query touches only the vertices it reaches and never resets the arrays. Public
-\texttt{Vertex}, \texttt{Edge} and \texttt{Path} types are small values that refer to these arrays.
+\texttt{Vertex}, \texttt{Edge} and \texttt{Path} types are small values that refer to these arrays. Weights are
+64-bit integers; an edge with a negative weight is treated as switched off. All techniques keep the results exact:
+the same paths with the same weights are returned with and without a detour bound (up to the bound), arc flags and
+the hierarchy; only paths of equal weight may come in a different order.
 
-\subsection{Eppstein with lazy persistent heaps}
-For every vertex $v$ that the enumeration reaches, $H(v)$ is the persistent merge of $H(\mathrm{next}(v))$ and the
-sidetracks leaving $v$; merging copies only the $O(\log n)$ nodes on the right spine of a leftist heap. Heaps are
-built on demand, iteratively from the goal towards $v$, so long tree paths cause no deep recursion. A candidate is
-represented by a pointer to its parent candidate and one heap node, so creating one costs $O(1)$; extracting a
-candidate creates at most three successors (the two heap children of its last sidetrack and the root of the heap at
-the head of that sidetrack). Writing out a path costs time proportional to its length, which dominates in practice
-(\cref{sec:experiments}).
+\section{Related work}\label{sec:related}
 
-\subsection{Detour corridor}
-Users rarely want arbitrarily long alternatives. With an absolute or relative detour limit $\Delta$, the backward
-Dijkstra stops at radius $d(s)+\Delta$: vertices farther away cannot lie on an admissible path. The same bound
-prunes candidates in the enumeration ($d(s)+\sum\delta\le d(s)+\Delta$) and the A* spur searches. This makes the
-number of paths finite even with cycles and turns a query between nearby vertices of a large graph into a local
-computation.
+The previous section introduced the algorithms we build on; here we place them among the alternatives.
 
-\subsection{Simple paths: Yen--Lawler with exact A*}
-In networks with two-way edges most of Eppstein's walks are the shortest path plus a small loop, not real
-alternatives. With \texttt{SimplePathsOnly}, the library uses Yen's algorithm with Lawler's rule. The found paths
-form a trie; the edges to block at a root are the children of the root's trie node. Each spur search is an A* search
-with the tree distances $d(v)$ as potential. Blocking vertices and edges can only make distances longer, so $d$ is a
-consistent lower bound, and the search explores little more than the spur itself; with a corridor, it stops as soon
-as no admissible spur can exist. Spurs of a path are generated lazily when the next path is requested, so asking for
-one path costs no spur search.
+\paragraph{Paths that may repeat vertices.} Eppstein's algorithm~\cite{eppstein1998} is the reference for walks.
+Jiménez and Marzal proposed the recursive enumeration algorithm~\cite{jimenez1999}, which computes the $k$-th path
+to a vertex from the paths to its predecessors, and later the lazy version of Eppstein's
+algorithm~\cite{jimenez2003} that we use; both are faster in practice than the original. K*~\cite{aljazzar2011}
+interleaves an A* search with the construction of the path graph, so that the full tree is never needed.
 
-\subsection{Arc flags}
-The vertices are partitioned into regions (automatically by a breadth-first order, from a string, or from an external
-partitioner such as Mt-KaHyPar~\cite{mtkahypar}; the library writes the METIS input format). For every boundary
-vertex one backward Dijkstra marks the tight edges. A query relaxes only edges flagged for the goal's region. Because
-Eppstein needs the distance of \emph{every} vertex that can reach the goal, arc flags cannot skip vertices here, only
-edge relaxations; we measured a gain of about 20\% with good partitions, which is why the documentation recommends
-the corridor first.
+\paragraph{Simple paths.} Beyond Yen~\cite{yen1971} and Lawler~\cite{lawler1972}, much work reduces the cost of the
+spur searches: Hershberger et al.~\cite{hershberger2007} use replacement paths, Feng~\cite{feng2014} uses the
+reverse shortest-path tree to restrict each search to the vertices that can matter, and Kurz and
+Mutzel~\cite{kurz2016} and Al Zoobi et al.~\cite{alzoobi2023} combine Eppstein's sidetrack idea with simplicity
+checks and avoid many spur searches altogether. Alternative routes~\cite{abraham2013} and $k$ shortest paths with
+limited overlap~\cite{chondrogiannis2020} address a related problem, where paths must be sufficiently different.
 
-\subsection{Contraction hierarchy with PHAST}\label{sec:ch}
-The contraction orders vertices lazily by edge difference plus the number of contracted neighbors, uses witness
-searches with settled-vertex limits, and keeps the minimum of parallel edges. A query without a corridor then
-computes all distances with PHAST~\cite{delling2013phast}: an upward search from $t$ over reversed downward edges,
-followed by one sweep in descending rank over upward edges, with vertices stored in sweep order. Eppstein also needs
-the tree, not only the distances; we rebuild it from the \emph{original} edges that are tight
-($d(u)=w(u,v)+d(v)$), breadth-first from $t$, which is correct even with zero-weight cycles. With a corridor the
-bounded Dijkstra visits fewer vertices than PHAST and is used instead.
+\paragraph{Speed-up techniques.} Arc flags and contraction hierarchies are two of many techniques for route
+planning in road networks; Bast et al.~\cite{bast2016} give a survey.
+
+\paragraph{Languages, garbage collection and measurement.}
+Hertz and Berger~\cite{hertz2005} quantified that garbage collection can match explicit memory management in speed
+if it is given several times more memory. Comparisons of the same program in several
+languages~\cite{prechelt2000,hundt2011} show that the differences between implementations within one language are
+often as large as those between languages, which is a caveat for our single implementation per language. For
+runtimes with JIT compilers, start-up and steady state must be separated, and steady state is not always
+reached~\cite{georges2007,barrett2017}; an earlier version of our own measurements illustrates the problem
+(\cref{sec:discussion}).
 
 \section{Three implementations}\label{sec:languages}
 
@@ -233,9 +479,11 @@ Rust 2021 & \NumLocRust & \NumLocRustTests & arenas with \texttt{u32} links, bor
 \end{tabular}
 \end{table}
 
-\paragraph{Memory management.} In \cs{} and Go, heap nodes and candidates are small objects managed by the garbage
-collector. In Rust they live in two vectors (arenas) per query and refer to each other by \texttt{u32} indices; the
-arenas are cleared at the next query. There is no reference counting and no unsafe code in the library.
+\paragraph{Memory management.} The graph and the per-vertex query data are flat arrays in all three languages. The
+enumeration differs: in \cs{} and Go, heap nodes and candidates are small objects managed by the garbage collector;
+in Rust they live in two vectors (arenas) per query and refer to each other by \texttt{u32} indices, and the arenas
+are cleared at the next query. There is no reference counting and no unsafe code in the Rust library. Every returned
+path is a freshly allocated list of edges in all three.
 
 \paragraph{Safety of iteration.} All three offer an iterator over the paths of a query. Changing the graph during the
 iteration is a runtime error in \cs{} (\texttt{InvalidOperationException}) and Go (panic). In Rust the iterator
@@ -249,9 +497,9 @@ label twice and needed 200\,MB instead of 112\,MB for the largest graph.)
 
 \paragraph{Testing.} The three implementations read the same golden files (graphs and expected paths, including
 DIMACS input), and compare against brute-force enumeration on thousands of random small graphs with cycles, zero
-and negative weights, corridors, arc flags and contraction hierarchies. \cs{} adds property-based tests (FsCheck),
-Go adds coverage-guided fuzzing of the importers and of the path enumeration. CI enforces coverage gates
-(\cs{} $\ge 95\%$ lines, Go $\ge 93\%$ statements).
+and negative weights, detour bounds, arc flags and contraction hierarchies. \cs{} adds property-based tests
+(FsCheck), Go adds coverage-guided fuzzing of the importers and of the path enumeration. CI enforces coverage gates
+(\cs{} $\ge 95\%$ lines, Go $\ge 93\%$ statements); the Rust tests are the smallest suite and have no coverage gate.
 
 \section{Experiments}\label{sec:experiments}
 
@@ -261,40 +509,57 @@ languages. It builds a $n\times n$ grid (vertex $v=y\,n+x$; edges to the right a
 vertex also to its left neighbor, which creates cycles); \texttt{two-way} grids have every street in both directions.
 Weights are $1+(r \bmod 100)$ for $r$ drawn from SplitMix64~\cite{steele2014} with seed 1, implemented identically
 in all three languages, so all of them build exactly the same graphs. The benchmark prints the weight of the last
-path, and the measurement script aborts if the languages disagree; they agreed in every scenario. Each scenario ran
-in a fresh process \NumRepeat{} times per language (once for the CH on $10^6$ vertices); we report medians.
-``Tree'' is the second identical query (\ie{} without one-time work such as building adjacency rows or JIT
-compilation), which is dominated by the shortest-path tree; ``next'' is the time for the remaining $k-1$ paths.
-Memory is the live heap after the first query: after a full collection in \cs{} and Go, and the allocator's
-live bytes in Rust.
+path, and the measurement script aborts if the languages disagree; they agreed in every scenario.
+
+\paragraph{What is measured.} Each scenario ran in a fresh process \NumRepeat{} times per language (once where a
+table says so); we report the median over the processes. Inside a process, the query is issued 22 times. The
+\emph{first} query includes one-time work (adjacency rows, JIT compilation). The \emph{second} is what a short
+benchmark would report. The \emph{steady-state} time is the median of the 20 further identical queries; it is the
+time of the shortest-path tree plus the first path, and is what the tables call ``tree''. Separating the
+three matters for JIT-compiled runtimes~\cite{georges2007,barrett2017} and changes the conclusions
+(\cref{sec:discussion}). ``Next'' is the time for the remaining $k-1$ paths, measured once per process after the
+last of these queries. The benchmark also records the garbage collections, their total pause time and the bytes
+allocated during ``next'' (from the runtimes' own counters; in Rust from a counting allocator), the live heap after
+the first query, and the script records the peak resident memory of the process. As a measure of dispersion we
+computed, for every time of at least 1\,ms, the range (largest minus smallest value over the \NumRepeat{}
+processes) relative to the median: its median over all entries is \NumSpreadMedian\%, its 90th percentile
+\NumSpreadNinety\% and its maximum \NumSpreadMax\%. Differences between languages below roughly
+\NumSpreadNinety\% should therefore not be interpreted.
 
 \input{tables/eppstein}
+\input{tables/enumeration}
 
-\paragraph{Eppstein, corner to corner (\cref{tab:eppstein}).} Grids with $4\cdot10^4$ to $10^6$ vertices, paths
-across the whole graph. \input{tables/text-eppstein}
+\paragraph{Eppstein, corner to corner (\cref{tab:eppstein,tab:enumeration}).} Grids with $4\cdot10^4$ to $10^6$
+vertices, paths across the whole graph. EPPSTEINTEXT
 
 \input{tables/local}
 
-\paragraph{Corridor (\cref{tab:local}).} Two nearby vertices in the middle of the $10^6$-vertex grid. Without a
-corridor, the tree covers the whole graph; with paths limited to 10\% above the shortest one, the tree covers only
-the neighborhood. \input{tables/text-local}
+\paragraph{Detour bound (\cref{tab:local}).} Two vertices in the middle of the $10^6$-vertex grid, 50 columns and 50
+rows apart. Without a bound, the tree covers every vertex that can reach the goal; with paths limited to 10\% above
+the shortest one, it covers only a neighborhood of the goal. LOCALTEXT
 
 \input{tables/build}
 
 \input{tables/yen}
 
-\paragraph{Simple paths (\cref{tab:yen}).} Two-way grids, where simple paths matter. \input{tables/text-yen}
+\paragraph{Simple paths (\cref{tab:yen}).} Two-way grids, where simple paths matter. YENTEXT
 
 \input{tables/ch}
 
-\paragraph{Contraction hierarchy (\cref{tab:ch}).} \input{tables/text-ch}
+\paragraph{Arc flags and contraction hierarchy (\cref{tab:ch}).} CHTEXT
 
 \input{tables/baseline}
 
-\paragraph{The 2010 original (\cref{fig:baseline}).} \input{tables/text-baseline}
+\paragraph{The 2010 original (\cref{fig:baseline}).} On acyclic grids, where it terminates at all, the original
+implementation's first query enumerates every path: 156\,ms for $10\times10$ (48,620 paths), 1.8\,s for $11\times11$
+and 40\,s and 132\,MB for $12\times12$ (705,432 paths). The current version needs about 0.1\,ms for the first path
+and less than 3\,ms for the next 999, independent of the number of paths in the graph. On graphs with cycles, the
+original does not terminate. This comparison shows the difference between an eager prototype and a lazy algorithm,
+not a tuning effect; it was measured once, in one process.
 
 \section{Discussion: garbage collection and language}\label{sec:discussion}
-\input{tables/text-discussion}
+\input{tables/runtime}
+DISCUSSIONTEXT
 
 \section{AI-assisted development}\label{sec:ai}
 
@@ -303,8 +568,8 @@ The whole project is an experiment with Claude~\cite{claudecode}. The author wor
 cloud development environment with access to the repository. Claude read and wrote the code, ran builds, tests,
 benchmarks and a fuzzer, searched the literature, opened pull requests and reacted to CI results; the author decided
 what to do next, chose among the options it proposed, and merged. All work happened in \NumSessions{} sessions over
-two days (\NumDays); \NumPullRequests{} pull requests were merged before this paper. The author's requests were
-short and informal, usually one sentence, and never a specification.
+three days (\NumDays); \NumPullRequests{} pull requests were merged before the first version of this paper. The
+author's requests were short and informal, usually one sentence, and never a specification.
 
 \subsection{What the human contributed}
 Three kinds of input shaped the result. \emph{The old algorithm} fixed the interface (labels, groups,
@@ -321,8 +586,8 @@ Claude wrote all code, tests, documentation and benchmarks of version~2, ran eve
 proposed most of the ideas that were implemented. It also argued \emph{against} ideas when its measurements did not
 support them: it first advised against contraction hierarchies, because the measured bottleneck of long queries was
 the number of spur searches, and after being asked to implement them it reported that the gain on grids
-(3--10$\times$ for the tree) is below the order of magnitude reported for road networks. The failures we observed
-were caught by tests, not by review:
+(\NumPhastSpeedupBig$\times$ for the tree) is below the order of magnitude reported for road networks. The failures
+in the code were caught by tests, not by review:
 \begin{itemize}
   \item Hand-computed expected values in new tests were wrong several times (\eg{} the weights of simple paths in a
         small two-way graph, and the edges of Eppstein's example typed from memory in the Rust tests); in each case
@@ -331,33 +596,78 @@ were caught by tests, not by review:
         and that Claude's own test harness had an $O(n^2)$ sort.
   \item A scripted text edit broke a Go struct tag; the build caught it.
   \item The first Rust port stored labels twice; the cross-language memory comparison exposed it.
-  \item The environment could not download the DIMACS road networks (HTTP-only server behind an HTTPS-only proxy),
+  \item The environment could not download the DIMACS road networks (the server is not reachable from it),
         so all experiments use synthetic grids (\cref{sec:limitations}).
 \end{itemize}
+
+\subsection{A critical review of the first version of this paper}
+The text has no test suite. On the third day the author asked Claude to review the first version of this paper
+critically, as a referee would. The review found errors of a different kind than those in the code:
+\begin{itemize}
+  \item \emph{A wrong citation.} The lazy variant of Eppstein's algorithm was attributed to Jiménez and Marzal's
+        1999 paper, which introduces the recursive enumeration algorithm; the lazy variant is their 2003 paper.
+        Relevant related work (K*, near-shortest paths, Feng, Hershberger et al.) was missing, which made the
+        detour bound and the A* spur searches look more original than they are.
+  \item \emph{Claims without data.} The text stated a 20\% gain for arc flags, a ``3--10$\times$'' gain for PHAST
+        and that writing out paths dominates the enumeration; none of these had a measurement in the paper. The
+        first two were not confirmed as stated (\cref{tab:ch}); the third was (\cref{tab:enumeration}).
+  \item \emph{A confounded headline result.} The main table reported the second query of each process as ``the
+        tree'' and showed \cs{} 3--4$\times$ slower than Rust on a small grid. The text explained this as JIT
+        warm-up, but the table and the abstract's ``Rust is the fastest in most scenarios'' still rested on it. With
+        steady-state measurements the ranking changes (\cref{sec:discussion}).
+  \item \emph{An indirect argument.} ``Garbage collection is not a factor'' was inferred from wall-clock times with
+        the collector disabled, without checking how often it ran or how long it paused, and although disabling a
+        collector changes more than the collections.
+  \item \emph{Small inaccuracies.} The number of paths within a detour bound was called finite without excluding
+        zero-weight cycles, ``allocation-free'' described a layout whose enumeration allocates, and a stated
+        maximum gap of 4$\times$ contradicted a 6$\times$ entry in a table of the same paper.
+\end{itemize}
+All of these read plausibly, and none would have been caught by the tests. They share a pattern with the wrong
+expected values above: statements produced from memory or from an explanation that sounded right, where a
+measurement or a look at the source was possible. The remedy was the same as for the code. The benchmark programs
+now measure what the text claims, and every measured number in the running text is inserted from the data files by
+a macro; the statements about the 2010 baseline and about cited work are the exceptions.
 
 \subsection{Observations}
 The decisive factor for reliability was the test infrastructure that Claude built early: golden data shared by all
 implementations, brute-force oracles and fuzzing. It made large refactorings (object graph to arrays; three
 languages) cheap to verify and let the author accept changes without reading every line. Claude was most useful as
 an algorithm engineer when asked open questions and given freedom, and most precise when given constraints. It never
-needed a formal specification; it needed a way to check itself.
+needed a formal specification; it needed a way to check itself. Where no such check existed, in the prose of a
+paper, it produced confident errors, and found them only when asked explicitly to doubt its own text.
 
-\section{Limitations}\label{sec:limitations}
-All experiments use synthetic grids, which are a hard case for contraction hierarchies and favorable for corridors;
-real road networks (DIMACS~\cite{dimacs9}, OpenStreetMap) are the obvious next step. The machine is a shared cloud VM;
-we report medians of fresh processes, but differences below about 10--20\% should be read as noise. The memory
-numbers are measured differently in each language (\cref{sec:experiments}). The case study has a sample size of one
-author and one AI model, and this paper itself was generated with Claude, so its account of the process is not
-independent.
+\section{Threats to validity}\label{sec:limitations}
+\emph{Inputs.} All experiments use synthetic grids with uniform random weights. They have no hierarchy, which makes
+them a hard case for contraction hierarchies, and the one-way grids are almost acyclic. Results on road networks
+(DIMACS~\cite{dimacs9}, OpenStreetMap) may differ in both directions; this is the most important missing
+experiment. Each scenario uses one graph (one seed) and one $s$--$t$ pair, so the times do not average over queries.
+
+\emph{Measurement.} The machine is a shared cloud VM with unknown neighbors; we report medians of fresh processes
+and the dispersion, but no confidence intervals. The contraction of the largest graph and the 2010 baseline were
+measured once. The live-heap numbers are measured differently in each language (after a full collection in \cs{} and
+Go, allocator bytes in Rust), and peak resident memory includes the benchmark's own edge list.
+
+\emph{Language comparison.} There is one implementation per language, all generated by the same AI model, the Go and
+Rust versions as ports. The implementations are not identical in every data structure (objects vs.\ arenas for the
+enumeration, a 4-ary vs.\ binary heaps, different hash tables), so differences between languages cannot be attributed
+to the garbage collector or the compiler alone, and other programmers would obtain other ratios~\cite{prechelt2000}.
+The conclusions hold for single-threaded code with a data layout that avoids allocation in the search loops; they
+say nothing about allocation-heavy or concurrent programs.
+
+\emph{Case study.} The case study has a sample size of one author and one AI model. This paper itself, including
+the review in \cref{sec:ai}, was generated with Claude, so its account of the process is not independent; the
+repository history and the data files are the primary evidence.
 
 \section{Conclusion}
-A small 2010 prototype became a library that combines Eppstein's enumeration, a detour corridor, Yen--Lawler with
-exact A*, arc flags and PHAST on a contraction hierarchy, in three languages with identical results. Algorithmic
-choices changed the running time by orders of magnitude; the choice between a garbage-collected and a
-non-garbage-collected language changed it by tens of percent, once the data layout avoided allocation in the hot
-loops. Promising next steps are the sidetrack-based simple-path algorithms~\cite{kurz2016,alzoobi2023} combined with
-(R)PHAST or CCH for the repeated tree computations, and experiments on real road networks. The code, the data and
-the scripts that produced every number in this paper are available in the repository~\cite{repo}.
+A small 2010 prototype became a library that combines Eppstein's enumeration, a detour bound, Yen--Lawler with
+exact A*, arc flags and PHAST on a contraction hierarchy, in three languages with identical results. On the grids
+we measured, algorithmic choices changed the running time by orders of magnitude, while the three languages stayed
+within a factor of \NumMaxRatioTreeAll{} of each other in steady state once the data layout avoided allocation in
+the search loops; warm-up of the JIT-compiled runtime was a larger effect than garbage collection. Promising next
+steps are experiments on real road networks, a bidirectional or K*-style construction that replaces the ball of
+the detour bound by the exact region, and the sidetrack-based simple-path algorithms~\cite{kurz2016,alzoobi2023}
+combined with (R)PHAST or CCH for the repeated tree computations. The code, the data and the scripts that produced
+every measurement in this paper are available in the repository~\cite{repo}.
 
 \bibliographystyle{plain}
 \bibliography{references}
