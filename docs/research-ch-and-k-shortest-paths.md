@@ -87,7 +87,7 @@ the related-work sections of the papers above) is needed before claiming novelty
 ## Implementation (November 2026)
 
 CH with PHAST for the shortest-path tree is now available as an option
-(`EnableContractionHierarchy`, C# and Go; README section 9). Design:
+(`EnableContractionHierarchy`, C# and Go; see [Faster queries](faster-queries.md)). Design:
 
 - **Contraction:** lazy node ordering by priority = 2 × shortcuts − removed edges + contracted
   neighbors (ties by vertex index, deterministic); witness searches with
@@ -104,7 +104,7 @@ CH with PHAST for the shortest-path tree is now available as an option
   zero/negative/parallel edges and unreachable vertices; all golden cases with CH; FsCheck property
   and Go fuzzing with a CH option; a mutation check (no shortcuts) is caught.
 
-Measured (C#, .NET 10, Release; grids as in the README, repeated query = tree only):
+Measured (C#, .NET 10, Release; grids as in [Performance](performance.md), repeated query = tree only):
 
 | Graph | Contraction | Shortcuts | Memory | Tree: Dijkstra → PHAST |
 |---|---|---|---|---|

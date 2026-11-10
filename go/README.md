@@ -6,10 +6,10 @@ points in a network, then the **second shortest**, the **third shortest**, and s
 
 > **Paper:** [`../paper/main.pdf`](../paper/main.pdf) compares this Go version with the C# and Rust
 > versions on identical graphs, including the cost of Go's garbage collector (a few percent of the time, more memory).
-> See [section 15 of the main README](../README.md#15-the-paper).
+> See [the summary in the main README](../README.md#the-paper).
 
 The API, the behavior and the Graphviz output are the same as in the C# version. The
-[main README](../README.md) explains the concepts (graph, edge, weight, path, arc flags) step by
+[user guide](../docs/guide.md) explains the concepts (graph, edge, weight, path, arc flags) step by
 step; everything there applies here too. This page shows the Go-specific parts.
 
 No dependencies outside the Go standard library. Requires **Go 1.23 or newer** (for `range` over the path iterators).
@@ -150,12 +150,12 @@ properties, so a few names differ:
 ## Things to know
 
 The same rules as in the C# version apply (see
-[section 7 of the main README](../README.md#7-things-to-know-common-pitfalls)):
+[Things to know in the user guide](../docs/guide.md#things-to-know-common-pitfalls)):
 
 - **Routes without loops:** by default paths may repeat vertices; in networks with two-way
   connections most of them are loops. `g.SetSimplePathsOnly(true)` returns only simple paths
   (Yen with Lawler's improvement), see
-  [section 8 of the main README](../README.md#8-routes-without-loops-simplepathsonly).
+  [Routes without loops](../docs/simple-paths.md).
 - **Graphs with cycles have infinitely many paths.** Stop the loop yourself
   (`for p := range g.Paths(s, t) { …; if done { break } }`), or set a corridor with
   `SetMaxDetour` or `SetMaxDetourRatio`: then the number of paths is finite.
@@ -180,7 +180,7 @@ Go-specific:
 
 ## Performance
 
-Same grid graphs as in [section 11 of the main README](../README.md#11-performance)
+Same grid graphs as in [Performance](../docs/performance.md)
 (4-core cloud VM):
 
 | Vertices | Edges | First path + next 10,000 paths | Memory allocated |
