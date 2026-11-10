@@ -196,8 +196,7 @@ fn run(size: usize, o: &Options) {
     let allocated = TOTAL.load(Ordering::Relaxed);
     let mut last = p.weight();
     let mut found = usize::from(p.is_valid());
-    let next;
-    if o.weights {
+    let next = if o.weights {
         // Weights without path objects: a new enumeration; the clock starts at its first result
         found = 0;
         let mut watch = Instant::now();
@@ -211,7 +210,11 @@ fn run(size: usize, o: &Options) {
                 break;
             }
         }
-        next = if found > 0 { ms(watch) } else { 0.0 };
+        if found > 0 {
+            ms(watch)
+        } else {
+            0.0
+        }
     } else {
         let watch = Instant::now();
         for _ in 1..o.k {
@@ -224,8 +227,8 @@ fn run(size: usize, o: &Options) {
                 found += 1;
             }
         }
-        next = ms(watch);
-    }
+        ms(watch)
+    };
     eprintln!(
         "stats: warm_median_ms={:.3} warm_min_ms={:.3} gc_count=0 gc_pause_ms=0.00 alloc_mb={:.1} arcflags_ms={:.0}",
         warm[warm.len() / 2],
