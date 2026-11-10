@@ -4,16 +4,15 @@ Ideas for increasing the value of this project, from the critical review of Nove
 (see section 7.4 of the [paper](paper/main.pdf) for what the review found in the paper itself).
 They are ordered by expected benefit.
 
-| # | Suggestion | Status |
-|---|---|---|
-| 1 | Experiments on real road networks | open |
-| 2 | Skip spur searches when the tree path is a valid spur | open |
-| 3 | Separate the query state from the graph | open |
-| 4 | Replace the ball of the detour bound by the exact region | open |
-| 5 | Publish the packages and make the paper citable | open |
-| 6 | Bring the Rust tests up to the C# and Go suites | open |
-| 7 | Reduce the memory use of Yen's algorithm | open |
-| 8 | Shorten the main README | open |
+1. [Experiments on real road networks](#1-experiments-on-real-road-networks)
+2. [Skip spur searches when the tree path is a valid spur](#2-skip-spur-searches-when-the-tree-path-is-a-valid-spur)
+3. [Separate the query state from the graph](#3-separate-the-query-state-from-the-graph)
+4. [Replace the ball of the detour bound by the exact region](#4-replace-the-ball-of-the-detour-bound-by-the-exact-region)
+5. [Publish the first release and get a DOI](#5-publish-the-first-release-and-get-a-doi)
+6. [Bring the Rust tests up to the C# and Go suites](#6-bring-the-rust-tests-up-to-the-c-and-go-suites)
+7. [Reduce the memory use of Yen's algorithm](#7-reduce-the-memory-use-of-yens-algorithm)
+
+Suggestions that have been carried out are removed from this list.
 
 ## 1. Experiments on real road networks
 
@@ -60,15 +59,16 @@ goal is within the bound.
 What to do: add a forward search from the start (bidirectional), or build the path graph on the
 fly during an A* search as K* does (Aljazzar and Leue 2011).
 
-## 5. Publish the packages and make the paper citable
+## 5. Publish the first release and get a DOI
 
-None of the three libraries is published: there is no release tag, no NuGet package, no crate and
-no tagged Go module. Nobody can use the library without cloning the repository, and the paper has
-no citation metadata.
+Everything for a release is prepared: package metadata, a workflow that publishes the NuGet
+package, the crate and the Go module from one tag, and `CITATION.cff` (see
+[docs/releasing.md](docs/releasing.md)). Nothing is published yet, because publishing needs the
+owner's accounts.
 
-What to do: tag a release, push the NuGet package and the crate, tag the Go module, and add a
-`CITATION.cff` file. A DOI for the paper and the code (for example through Zenodo) would make both
-citable in the long term.
+What to do: store the API keys of nuget.org and crates.io as repository secrets, then push the tag
+`v2.0.0` on the default branch. Connect the repository to Zenodo before that, so that the release
+gets a DOI, and add the DOI to `CITATION.cff` and to the paper.
 
 ## 6. Bring the Rust tests up to the C# and Go suites
 
@@ -86,12 +86,3 @@ version allocates 940 MB for 1,000 paths on a grid with 40,000 vertices.
 
 What to do: store a candidate as a pointer to its root in the trie plus its spur, and detect
 duplicates through the trie instead of a set of full paths.
-
-## 8. Shorten the main README
-
-The main README has almost 1,000 lines: tutorial, API reference, algorithm description, benchmark
-tables and development notes in one file. A visitor cannot see at a glance what the project is and
-how to start.
-
-What to do: keep the overview, the quick start and the links in the README, and move the reference
-material into separate files under `docs/`.

@@ -32,15 +32,16 @@ Create a new module and add the library:
 ```sh
 mkdir myroutes && cd myroutes
 go mod init myroutes
-go get github.com/nickdinges/k-shortest-path/go/eppstein
+go get github.com/nickdinges/k-shortest-path/go/v2/eppstein
 ```
 
-> `go get` works once this code is on the repository's default branch and the repository is
-> public. Until then, point Go to a local copy instead:
+> `go get` works from the first release on (tag `go/v2.0.0`, see
+> [Releasing](../docs/releasing.md)). The path ends in `/v2` because Go requires the major version
+> in the module path from version 2 on. Before the release, point Go to a local copy instead:
 >
 > ```sh
-> go mod edit -replace github.com/nickdinges/k-shortest-path/go=../k-shortest-path/go
-> go mod edit -require github.com/nickdinges/k-shortest-path/go@v0.0.0
+> go mod edit -replace github.com/nickdinges/k-shortest-path/go/v2=../k-shortest-path/go
+> go mod edit -require github.com/nickdinges/k-shortest-path/go/v2@v2.0.0
 > ```
 
 `main.go`:
@@ -51,7 +52,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/nickdinges/k-shortest-path/go/eppstein"
+	"github.com/nickdinges/k-shortest-path/go/v2/eppstein"
 )
 
 func main() {
@@ -224,15 +225,15 @@ go run ./cmd/benchmark 200 1000 --k 10000 --build index   # same program as the 
 ## Moving this module into its own repository
 
 The module lives in the `go/` folder, so its import path is
-`github.com/nickdinges/k-shortest-path/go`. To publish it as a separate repository (for example
+`github.com/nickdinges/k-shortest-path/go/v2`. To publish it as a separate repository (for example
 `github.com/nickdinges/k-shortest-path-go`):
 
 1. Copy the content of `go/` into the root of the new repository.
 2. Replace the module path everywhere:
 
    ```sh
-   grep -rl 'github.com/nickdinges/k-shortest-path/go' . \
-     | xargs sed -i 's#github.com/nickdinges/k-shortest-path/go#github.com/nickdinges/k-shortest-path-go#g'
+   grep -rl 'github.com/nickdinges/k-shortest-path/go/v2' . \
+     | xargs sed -i 's#github.com/nickdinges/k-shortest-path/go/v2#github.com/nickdinges/k-shortest-path-go/v2#g'
    ```
 
 3. Copy `../testdata/golden` into the new repository as `testdata/golden` and change

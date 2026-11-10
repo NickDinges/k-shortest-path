@@ -1,0 +1,66 @@
+name: Release
+
+# Pushing a tag vX.Y.Z on the default branch publishes that version of all three libraries:
+# the NuGet package, the crate, and the Go module (through the tag go/vX.Y.Z), and creates a
+# GitHub release with the NuGet package and the paper. See docs/releasing.md.
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write  # create the Go tag and the GitHub release
+
+jobs:
+  release:
+    name: Test and publish
+    runs-on: ubuntu-latest
+    env:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Rust toolchain
+        run: rustup update stable && rustup default stable
+
+      - name: The tag must match the version in all three packages and in CITATION.cff
+        run: .github/scripts/check-version.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Test C#
+        run: dotnet test csharp/Eppstein.sln -c Release
+      - name: Test Go
+        working-directory: go
+        run: go vet ./... && go test ./...
+      - name: Test Rust
+        working-directory: rust
+        run: cargo test --release
+
+      - name: Build the NuGet package
+        run: dotnet pack csharp/Eppstein/Eppstein.csproj -c Release -o artifacts
+      - name: Check that the crate can be packaged
+        working-directory: rust
+        run: cargo package
+
+      # Publishing. Each registry is skipped if its secret is not configured.
+      - name: Publish to NuGet
+        if: env.NUGET_API_KEY != ''
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: Publish to crates.io
+        if: env.CARGO_REGISTRY_TOKEN != ''
+        working-directory: rust
+        run: cargo publish
+      - name: Tag the Go module (go/vX.Y.Z)
+        run: |
+          git tag "go/$GITHUB_REF_NAME"
+          git push origin "go/$GITHUB_REF_NAME"
+      - name: GitHub release with the NuGet package and the paper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg artifacts/*.snupkg paper/main.pdf --title "$GITHUB_REF_NAME" --generate-notes

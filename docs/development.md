@@ -18,6 +18,7 @@
 | `testdata/golden/` | Graphs with expected paths, checked by the C# **and** the Go tests |
 | `.github/workflows/ci.yml` | CI: build, tests and a benchmark comparison for every pull request |
 | `docs/` | The documentation, its images, and [an assessment of contraction hierarchies for this library](research-ch-and-k-shortest-paths.md) (with measurements of the implementation) |
+| `.github/workflows/release.yml` | Publishes the three packages when a version tag is pushed (see [Releasing](releasing.md)) |
 | `go/` | Go port of the library ([own README](../go/README.md)) |
 | `rust/` | Rust port of the library ([own README](../rust/README.md)) |
 | `paper/` | Paper (LaTeX) with the cross-language measurements and their scripts ([README](../paper/README.md)) |

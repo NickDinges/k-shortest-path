@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it, and the paper where it applies."
+title: "k-shortest-path: k shortest paths in C#, Go and Rust"
+abstract: >-
+  Eppstein's k shortest paths algorithm with lazily built persistent heaps, simple paths with
+  Yen's algorithm and Lawler's improvement, a detour bound, arc flags and a contraction hierarchy
+  with PHAST, in C#, Go and Rust with identical interfaces and results.
+type: software
+authors:
+  - family-names: Dinges
+    given-names: Nick
+version: 2.0.0
+license: MIT
+repository-code: "https://github.com/NickDinges/k-shortest-path"
+keywords:
+  - k shortest paths
+  - Eppstein
+  - Yen
+  - contraction hierarchies
+  - PHAST
+  - arc flags
+preferred-citation:
+  type: report
+  title: >-
+    From a 2010 Prototype to Contraction Hierarchies in Three Languages: Engineering k Shortest
+    Paths with Eppstein, Yen-Lawler, Arc Flags and PHAST
+  authors:
+    - family-names: Dinges
+      given-names: Nick
+  year: 2026
+  month: 11
+  url: "https://github.com/NickDinges/k-shortest-path/blob/master/paper/main.pdf"
+  notes: "Generated with Claude (Anthropic) under the author's direction."

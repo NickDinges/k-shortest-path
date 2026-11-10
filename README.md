@@ -31,7 +31,7 @@ blue and green. The number under each letter is the distance from that point to 
 
 **Contents:** [What it solves](#what-problem-does-this-solve) · [Quick start](#quick-start) ·
 [First program](#your-first-program) · [What the library can do](#what-the-library-can-do) ·
-[Documentation](#documentation) · [The paper](#the-paper)
+[Packages](#packages) · [Documentation](#documentation) · [The paper](#the-paper)
 
 ---
 
@@ -182,6 +182,20 @@ That's it. The pattern is always the same:
 | **Import and output** | CSV and DIMACS import, Graphviz (DOT) output for drawings. | [User guide](docs/guide.md#api-reference) |
 | **Three languages** | The same interface and the same results in C# ([`csharp/`](csharp/)), Go ([`go/`](go/README.md)) and Rust ([`rust/`](rust/README.md)), checked against shared test data. | [Project layout and tests](docs/development.md) |
 
+## Packages
+
+From the first release (version 2.0.0) on, the libraries can be installed as packages. Until then,
+use the code from this repository as shown above.
+
+| Language | Install |
+|---|---|
+| C# | `dotnet add package Eppstein.KShortestPaths` |
+| Go | `go get github.com/nickdinges/k-shortest-path/go/v2/eppstein` |
+| Rust | `cargo add eppstein` |
+
+To cite the library or the paper, see [`CITATION.cff`](CITATION.cff) ("Cite this repository" on
+GitHub).
+
 ## Documentation
 
 | Document | Content |
@@ -193,6 +207,7 @@ That's it. The pattern is always the same:
 | [Performance](docs/performance.md) | Measurements and how to run the benchmark |
 | [Project layout and tests](docs/development.md) | Folders, tests, continuous integration |
 | [Upgrading from version 1](docs/upgrading-from-v1.md) | What changed in the interface |
+| [Releasing](docs/releasing.md) | How a version of the three packages is published |
 | [Go version](go/README.md), [Rust version](rust/README.md) | The ports and their specifics |
 | [The paper](paper/main.pdf) | Algorithms with running times, the C#/Go/Rust comparison, and how the library was developed |
 | [Suggestions](suggestions.md) | Ideas for further work |

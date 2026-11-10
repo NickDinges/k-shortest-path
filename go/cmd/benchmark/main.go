@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickdinges/k-shortest-path/go/eppstein"
+	"github.com/nickdinges/k-shortest-path/go/v2/eppstein"
 )
 
 // splitMix is SplitMix64, implemented identically in C#, Go and Rust.
