@@ -49,8 +49,8 @@ def write(name, text):
         f.write(text)
 
 
-def table(name, caption, label, header, body, spec):
-    write(name, "\\begin{table}[t]\n\\centering\n\\caption{" + caption + "}\n\\label{" + label + "}\n\\small\n"
+def table(name, caption, label, header, body, spec, size="\\small"):
+    write(name, "\\begin{table}[t]\n\\centering\n\\caption{" + caption + "}\n\\label{" + label + "}\n" + size + "\n"
           "\\begin{tabular}{" + spec + "}\n\\toprule\n" + header + " \\\\\n\\midrule\n" + body +
           "\\bottomrule\n\\end{tabular}\n\\end{table}\n")
 
@@ -72,7 +72,7 @@ def plain(x):
     if x >= 100:
         return f"{x:,.0f}".replace(",", "{,}")
     if x >= 10:
-        return f"{x:.1f}".rstrip("0").rstrip(".") if x == round(x) else f"{x:.1f}"
+        return f"{x:.0f}" if x >= 30 else f"{x:.1f}"
     return f"{x:.2f}" if x < 1 else f"{x:.1f}"
 
 
@@ -177,7 +177,8 @@ table("runtime.tex", "Runtime settings (median ms). 2nd: second query of the pro
       "enumerated.", "tab:runtime",
       " & \\multicolumn{4}{c}{Eppstein $200^2$, $k=10^4$} & \\multicolumn{4}{c}{Eppstein $1000^2$, $k=10^5$} & "
       "\\multicolumn{4}{c}{Yen $200^2$, $k=10^3$} \\\\ \\cmidrule(lr){2-5}\\cmidrule(lr){6-9}"
-      "\\cmidrule(lr){10-13}\n" + " & 2nd & steady & next & GCs" * 3, body, "@{}l" + "rrrr" * 3 + "@{}")
+      "\\cmidrule(lr){10-13}\n" + " & 2nd & steady & next & GCs" * 3, body, "@{}l" + "rrrr" * 3 + "@{}",
+      size="\\footnotesize\\setlength{\\tabcolsep}{3.5pt}")
 
 # Values for the running text: \val{scenario/language/field} and named macros
 values = {}
@@ -188,9 +189,10 @@ KEYS = {"build_ms": "build", "memory_mb": "mem", "first_ms": "first", "repeated_
 for (sc, lang), r in rows.items():
     for key, short in KEYS.items():
         if r[key] != "":
-            values[f"{sc}/{SHORT[lang]}/{short}"] = plain(float(r[key]))
+            values[f"{sc}/{SHORT[lang]}/{short}"] = f"{float(r[key]):.0f}" if key == "gc_count" else plain(float(r[key]))
             if key.endswith("_ms") and float(r[key]) >= 1000:
                 values[f"{sc}/{SHORT[lang]}/{short}:s"] = plain(float(r[key]) / 1000)
+    values[f"{sc}/{SHORT[lang]}/warmlo"] = plain(float(r["warm_lo_ms"]))
     if r["shortcuts"] != "":
         values[f"{sc}/{SHORT[lang]}/shortcuts"] = f"{int(float(r['shortcuts'])):,}".replace(",", "{,}")
 for sc in sorted({k[0] for k in rows}):
@@ -203,7 +205,8 @@ for sc in sorted({k[0] for k in rows}):
 for (sc, lang, setting), r in runtime.items():
     for key, short in KEYS.items():
         if key in r and r[key] != "":
-            values[f"rt/{sc}/{SHORT[lang]}/{setting.replace(' ', '-')}/{short}"] = plain(float(r[key]))
+            values[f"rt/{sc}/{SHORT[lang]}/{setting.replace(' ', '-')}/{short}"] = \
+                f"{float(r[key]):.0f}" if key == "gc_count" else plain(float(r[key]))
 
 macros = {}
 big = ["eppstein-1000", "eppstein-1000-k100k", "local-1000"]  # the 10^6-vertex graphs, full tree
@@ -247,6 +250,17 @@ macros["NumSpreadNinety"] = f"{100 * spreads[int(0.9 * (len(spreads) - 1))]:.0f}
 macros["NumSpreadMax"] = f"{100 * spreads[-1]:.0f}"
 repeat = max(int(rows[k]["runs"]) for k in rows)
 macros["NumRepeat"] = str(repeat)
+long = [sc for sc in all_time if min(val(sc, l, TREE) for l in LANGS) >= 1]  # at least 1 ms in every language
+macros["NumMaxRatioTreeLong"] = f"{max(ratio(sc, TREE) for sc in long):.1f}"
+macros["NumRatioTreeShort"] = f"{ratio('local-1000-ratio', TREE):.1f}"
+for name, sc in [("NumGcShareCs", "eppstein-1000-k100k"), ("NumGcShareCsYen", "yen-200-k1000")]:
+    macros[name] = f"{100 * val(sc, 'C#', 'gc_pause_ms') / val(sc, 'C#', NEXT):.0f}"
+rss = [val("eppstein-1000", l, "peak_rss_mb") / val("eppstein-1000", "Rust", "peak_rss_mb") for l in ("C#", "Go")]
+macros["NumRssRatio"] = f"{min(rss):.1f}--{max(rss):.1f}"
+even = [val("ch-1000", l, "contraction_ms") / (val("eppstein-1000", l, TREE) - val("ch-1000", l, TREE)) for l in LANGS]
+macros["NumChBreakEven"] = f"{round(min(even), -1):.0f}--{round(max(even), -1):.0f}"
+adv = [100 * (1 - val("eppstein-1000-k100k", "Rust", NEXT) / val("eppstein-1000-k100k", l, NEXT)) for l in ("C#", "Go")]
+macros["NumRustEnumAdvantage"] = f"{min(adv):.0f}--{max(adv):.0f}"
 
 # Baseline
 baseline = os.path.join(DATA, "baseline.csv")

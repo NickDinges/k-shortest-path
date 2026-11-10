@@ -13,8 +13,8 @@ Find the **shortest route** between two points in a network, then the **second s
 library grew from a 2010 prototype into Eppstein + Yen–Lawler + arc flags + contraction hierarchies,
 in C#, Go and Rust. An experiment: code, tests, measurements and text were generated with Claude.
 
-- Same graphs, three languages: within **1.3×** of each other; garbage collection makes **no
-  measurable difference**.
+- Same graphs, three languages: within **1.6×** of each other in steady state; garbage collection
+  costs **a few percent of the time**, but 1.6–1.8× the memory.
 - Algorithms beat languages: first path **40 s → 0.12 ms** compared with the 2010 version.
 
 [Read the PDF](paper/main.pdf) · [Summary](#15-the-paper) · [Reproduce](paper/README.md)
@@ -949,7 +949,7 @@ Version 2 changed the interface. What to change in your code:
 
 ## 15. The paper
 
-[`paper/main.pdf`](paper/main.pdf) (11 pages, English, LaTeX source in [`paper/`](paper/README.md)):
+[`paper/main.pdf`](paper/main.pdf) (21 pages, English, LaTeX source in [`paper/`](paper/README.md)):
 *From a 2010 Prototype to Contraction Hierarchies in Three Languages: Engineering k Shortest Paths
 with Eppstein, Yen–Lawler, Arc Flags and PHAST*.
 
@@ -957,20 +957,30 @@ The paper is the result of an experiment: the code in all three languages, the t
 measurements and the text were generated with Claude (Anthropic) through Claude Code, under the
 direction of the repository's author. It covers:
 
-- **The algorithms and how they work together** (sections 9 and 10 of this README in more depth):
-  Eppstein with lazy persistent heaps, the corridor, Yen–Lawler with exact A\*, arc flags with
-  external partitions, and PHAST on a contraction hierarchy, with related work.
+- **The algorithms, explained from the definitions onward** (sections 9 and 10 of this README in
+  more depth), so the paper can be read without the original articles: Dijkstra and the
+  shortest-path tree, Eppstein's sidetracks and persistent heaps with a worked example, the
+  detour bound (corridor), Yen–Lawler with exact A\*, arc flags, and contraction hierarchies with
+  PHAST. Every algorithm comes with its running time and memory in O-notation, collected in one
+  table, followed by related work.
 - **C#, Go and Rust compared** on exactly the same graphs, with the same benchmark program in all
   three languages:
-  - the three are within a factor of 1.3 for the shortest-path tree on 1,000,000 vertices;
-  - Rust is mostly 10–40% faster;
-  - garbage collection makes no measurable difference (Go with the collector switched off is not
-    faster);
-  - the largest gaps come from .NET's tiered JIT compilation on short runs.
+  - in steady state the three are within a factor of 1.6 for every shortest-path tree that takes
+    at least a millisecond, and no language is fastest everywhere;
+  - measured on the second query of a process, the gap is up to 5 times: that is .NET's tiered
+    JIT compilation on short runs, not garbage collection;
+  - garbage collection costs a few percent of the time (.NET pauses for about 4% while 100,000
+    paths are enumerated; Go with the collector switched off is not faster), but the
+    garbage-collected processes need 1.6 to 1.8 times the peak memory of the Rust process;
+  - 95–99% of the time for enumerating paths is writing the paths out, not finding them.
 - **Algorithms matter more than languages:** the original 2010 version needs 40 s for the first path
-  on a 12×12 grid, the current one 0.12 ms; a corridor turns a 69 ms query into 0.5 ms.
+  on a 12×12 grid, the current one 0.12 ms; a corridor turns a 75 ms query into 0.5 ms.
 - **How the work was done:** what came from the author (the 2010 code, short requests, ideas from
-  a domain expert), what Claude did, where it made mistakes, and how the tests caught them.
+  a domain expert), what Claude did, where it made mistakes, and how the tests caught them. A
+  critical review of the first version of the paper found errors that no test could catch (a
+  wrong citation, claims without data, a result distorted by JIT warm-up); they are listed too.
+- **Threats to validity:** all experiments use synthetic grids, not road networks; there is one
+  implementation per language; differences below about 30% are within the measurement noise.
 
 Every number in the paper comes from scripts and CSV files in `paper/`; see
 [`paper/README.md`](paper/README.md) to reproduce the measurements and to build the PDF.

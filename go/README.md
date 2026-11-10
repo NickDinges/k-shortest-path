@@ -5,7 +5,7 @@ points in a network, then the **second shortest**, the **third shortest**, and s
 [Eppstein's algorithm](http://www.ics.uci.edu/~eppstein/pubs/Epp-SJC-98.pdf).
 
 > **Paper:** [`../paper/main.pdf`](../paper/main.pdf) compares this Go version with the C# and Rust
-> versions on identical graphs, including the effect of Go's garbage collector (none measurable).
+> versions on identical graphs, including the cost of Go's garbage collector (a few percent of the time, more memory).
 > See [section 15 of the main README](../README.md#15-the-paper).
 
 The API, the behavior and the Graphviz output are the same as in the C# version. The

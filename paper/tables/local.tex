@@ -1,15 +1,15 @@
 \begin{table}[t]
 \centering
-\caption{Nearby vertices in the middle of the $10^6$-vertex grid, $k=10^4$ (ms). First: first query (includes one-time work such as JIT compilation and building adjacency rows).}
+\caption{Nearby vertices in the middle of the $10^6$-vertex grid, $k=10^4$ (ms). First: first query of the process (includes one-time work such as JIT compilation and building adjacency rows); tree: steady state.}
 \label{tab:local}
 \small
 \begin{tabular}{lrrrrrrrrr}
 \toprule
- & \multicolumn{3}{c}{first query} & \multicolumn{3}{c}{tree} & \multicolumn{3}{c}{next paths} \\ \cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
+ & \multicolumn{3}{c}{first query} & \multicolumn{3}{c}{tree (steady state)} & \multicolumn{3}{c}{next paths} \\ \cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
  & \cs{} & Go & Rust & \cs{} & Go & Rust & \cs{} & Go & Rust \\
 \midrule
-no corridor & \num{218} & \num{115} & \textbf{98.0} & \textbf{65.5} & 84.4 & 69.1 & 33.3 & \textbf{10.5} & \textbf{10.7} \\
-\texttt{MaxDetourRatio} $=0.1$ & 46.8 & \textbf{21.6} & 27.5 & 3.0 & 0.80 & \textbf{0.50} & 32.0 & \textbf{10.7} & \textbf{11.0} \\
+no corridor & \num{266} & \num{114} & \textbf{95.6} & \textbf{69.9} & 86.5 & 75.0 & 29.4 & 11.7 & \textbf{11.2} \\
+\texttt{MaxDetourRatio} $=0.1$ & 60.7 & \textbf{26.7} & 31.8 & 2.3 & 0.58 & \textbf{0.52} & 29.4 & \textbf{10.8} & \textbf{11.0} \\
 \bottomrule
 \end{tabular}
 \end{table}

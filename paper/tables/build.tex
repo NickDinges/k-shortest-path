@@ -1,17 +1,18 @@
 \begin{table}[t]
 \centering
-\caption{Building the $10^6$-vertex grid ($2.1\cdot10^6$ edges), in ms, and the live memory of the graph with one query (built by index).}
+\caption{Building the $10^6$-vertex grid ($2.1\cdot10^6$ edges), in ms; live memory of the graph with one query and peak resident memory of the whole benchmark process (built by index, $k=10^4$).}
 \label{tab:build}
 \small
 \begin{tabular}{lrrr}
 \toprule
  & \cs{} & Go & Rust \\
 \midrule
-by index & \num{440} & \num{530} & \textbf{\num{253}} \\
-by label strings & \num{1131} & \num{1057} & \textbf{\num{736}} \\
-DIMACS text import & \num{560} & \num{873} & \textbf{\num{417}} \\
+by index & \num{460} & \num{661} & \textbf{\num{279}} \\
+by label strings & \num{1326} & \num{1175} & \textbf{\num{863}} \\
+DIMACS text import & \num{704} & \num{1020} & \textbf{\num{473}} \\
 \midrule
-live memory (MB) & 117 & 94 & 112 \\
+live memory of the graph (MB) & 84 & 94 & 112 \\
+peak resident memory of the process (MB) & 406 & 344 & 220 \\
 \bottomrule
 \end{tabular}
 \end{table}

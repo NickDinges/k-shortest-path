@@ -1,17 +1,17 @@
 \begin{table}[t]
 \centering
-\caption{Eppstein, corner to corner on one-way grids (median times in ms). Tree: repeated query; next: the remaining $k-1$ paths. Fastest per group in bold (within 3\%).}
+\caption{Eppstein, corner to corner on one-way grids (ms). Tree: steady-state query; next: the remaining $k-1$ paths, written out as edge lists. Fastest per group in bold (within 3\%).}
 \label{tab:eppstein}
 \small
 \begin{tabular}{lrrrrrr}
 \toprule
- & \multicolumn{3}{c}{tree} & \multicolumn{3}{c}{next paths} \\ \cmidrule(lr){2-4}\cmidrule(lr){5-7}
+ & \multicolumn{3}{c}{tree (steady state)} & \multicolumn{3}{c}{next paths} \\ \cmidrule(lr){2-4}\cmidrule(lr){5-7}
  & \cs{} & Go & Rust & \cs{} & Go & Rust \\
 \midrule
-$200^2$, $k=10^4$ & 29.2 & 8.6 & \textbf{7.3} & 79.6 & 45.5 & \textbf{35.3} \\
-$500^2$, $k=10^4$ & 54.0 & 73.4 & \textbf{52.4} & \num{205} & \num{113} & \textbf{88.6} \\
-$1000^2$, $k=10^4$ & \textbf{\num{255}} & \num{312} & \textbf{\num{260}} & \num{406} & \num{359} & \textbf{\num{314}} \\
-$1000^2$, $k=10^5$ & \textbf{\num{253}} & \num{331} & \num{272} & \num{3419} & \num{3436} & \textbf{\num{3079}} \\
+$200^2$, $k=10^4$ & 6.5 & 7.7 & \textbf{5.8} & 79.4 & 40.5 & \textbf{30.8} \\
+$500^2$, $k=10^4$ & \textbf{54.8} & 67.0 & \textbf{56.3} & \num{196} & \num{108} & \textbf{88.3} \\
+$1000^2$, $k=10^4$ & \textbf{\num{260}} & \num{316} & \num{273} & \num{394} & \num{349} & \textbf{\num{277}} \\
+$1000^2$, $k=10^5$ & \textbf{\num{260}} & \num{314} & \num{277} & \num{3094} & \num{3188} & \textbf{\num{2804}} \\
 \bottomrule
 \end{tabular}
 \end{table}

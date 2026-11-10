@@ -59,12 +59,13 @@ hierarchy whose PHAST sweep computes the full shortest-path tree. The library ex
 interface and results: \cs{} and Go, which are garbage collected, and Rust, which is not. All three share golden test
 data and an identical benchmark, so their timings can be compared on exactly the same graphs.
 On synthetic grid graphs with up to one million vertices, the steady-state time of the shortest-path tree differs by
-at most a factor of \NumMaxRatioTreeAll{} between the three implementations, and no language is fastest
-everywhere. Measured naively, on the second query of a process, the gap is up to \NumMaxRatioSecond$\times$; this is
-.NET's tiered JIT compilation, not garbage collection. Garbage collection itself is a small cost here: enumerating
-$10^5$ paths allocates about \val{eppstein-1000-k100k/go/alloc}\,MB, but the collectors pause for only
-\val{eppstein-1000-k100k/go/pause}\,ms (Go) and \val{eppstein-1000-k100k/cs/pause}\,ms (\cs{}) of
-\val{eppstein-1000-k100k/range/next:s}\,s. The algorithmic choices dominate by far: the original 2010
+at most a factor of \NumMaxRatioTreeLong{} between the three implementations for queries of at least a millisecond,
+and no language is fastest everywhere. Measured naively, on the second query of a process, the gap is up to \NumMaxRatioSecond$\times$; this is
+.NET's tiered JIT compilation, not garbage collection. Garbage collection itself is a small cost in time:
+enumerating $10^5$ paths allocates about 840\,MB in each language, and the collectors pause for
+\val{eppstein-1000-k100k/go/pause}\,ms (Go) and \val{eppstein-1000-k100k/cs/pause}\,ms (\cs{}) of about
+3\,s. Its price is memory: the garbage-collected processes need \NumRssRatio$\times$ the peak memory of the Rust
+process. The algorithmic choices dominate by far: the original 2010
 implementation needs \NumVOneFirst{} for the first path on a $\NumVOneSize\times\NumVOneSize$ acyclic grid where the
 current one needs \NumVTwoFirst, and a detour bound turns a \NumLocalRepeated{} query into \NumLocalRatioRepeated.
 Finally, we describe how the work was done: the whole transformation, including this paper, was generated with
@@ -479,10 +480,10 @@ $\ell$ edges in the longest output path, $r$ regions, $b$ boundary vertices, $m_
 region, $m^+$ edges including shortcuts, $q$ size of the upward search space, $n_\Delta,m_\Delta$ vertices and
 edges within the detour bound. Writing out the paths adds $O(k\ell)$ time everywhere.}
 \label{tab:complexity}
-\small
+\footnotesize
 \begin{tabular}{@{}llll@{}}
 \toprule
-step & preprocessing time & query time & space \\
+step & preprocessing & query time & space \\
 \midrule
 Tree: Dijkstra & -- & $O((n+m)\log n)$ & $O(n+m)$ \\
 \quad with detour bound & -- & $O((n_\Delta+m_\Delta)\log n_\Delta)$ & $O(n+m)$ \\
@@ -490,10 +491,10 @@ Tree: Dijkstra & -- & $O((n+m)\log n)$ & $O(n+m)$ \\
 \quad with CH and PHAST & no useful bound & $O(q\log q+n+m+m^+)$ & $O(n+m^+)$ \\
 \midrule
 Walks: Eppstein (original) & -- & $O(m+n\log n+k\log k)$ & $O(m+n\log n+k)$ \\
-Walks: lazy leftist heaps (ours) & -- & $O((n+m)\log n+k\log k)$ & $O(m+n\log n+k)$ \\
-\quad first path only & -- & tree $+\;O(L\log n+\sum_{v}\deg(v)\log\deg(v))$ & \\
-Simple paths: Yen--Lawler, A* & -- & $O(k\ell\,(n+m)\log n)$ & $O(n+m+k\ell^2)$ \\
-2010 prototype (acyclic graphs) & -- & at least the number of all walks & all walks \\
+Walks: lazy heaps (ours) & -- & $O((n+m)\log n+k\log k)$ & $O(m+n\log n+k)$ \\
+\quad first path, after the tree & -- & $O(L\log n+\sum_{v}\deg(v)\log\deg(v))$ & \\
+Simple: Yen--Lawler, A* & -- & $O(k\ell\,(n+m)\log n)$ & $O(n+m+k\ell^2)$ \\
+2010 prototype & -- & $\ge$ number of all walks & all walks \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -616,29 +617,74 @@ the first query, and the script records the peak resident memory of the process.
 computed, for every time of at least 1\,ms, the range (largest minus smallest value over the \NumRepeat{}
 processes) relative to the median: its median over all entries is \NumSpreadMedian\%, its 90th percentile
 \NumSpreadNinety\% and its maximum \NumSpreadMax\%. Differences between languages below roughly
-\NumSpreadNinety\% should therefore not be interpreted.
+\NumSpreadNinety\% should therefore not be interpreted; we come back to this in \cref{sec:limitations}.
 
 \input{tables/eppstein}
 \input{tables/enumeration}
 
 \paragraph{Eppstein, corner to corner (\cref{tab:eppstein,tab:enumeration}).} Grids with $4\cdot10^4$ to $10^6$
-vertices, paths across the whole graph. EPPSTEINTEXT
+vertices, paths across the whole graph. All three languages return the same path weights. In steady state the tree of the
+$10^6$-vertex grid takes \val{eppstein-1000/cs/warm}\,ms (\cs), \val{eppstein-1000/go/warm}\,ms (Go) and
+\val{eppstein-1000/rust/warm}\,ms (Rust). On every grid the three are within a factor of 1.2--1.3 of each other,
+which is inside the dispersion of the measurements, and no language is fastest on all sizes. The next $10^4$ paths
+take \val{eppstein-1000/range/next}\,ms on the largest grid. On the small grid \cs{} needs
+\val{eppstein-200/cs/next}\,ms where Rust needs \val{eppstein-200/rust/next}\,ms; this is again a warm-up effect,
+because the enumeration code runs here for the first time (\cref{sec:discussion}). For $10^5$ paths all three need
+\NumPerPathMicros\,\textmu s per path.
+
+\Cref{tab:enumeration} shows where this time goes. Asking only for the weights of the $10^5$ paths takes
+\val{weights-1000-k100k/range/next}\,ms, or \NumPerWeightMicros\,\textmu s per path: \NumOutputShare\% of the
+enumeration time is spent writing out paths of about 2000 edges each, as the $O(k\ell)$ term of
+\cref{tab:complexity} predicts, and all three languages allocate about the same
+\val{eppstein-1000-k100k/rust/alloc}--\val{eppstein-1000-k100k/go/alloc}\,MB for them. The enumeration proper, the
+part that Eppstein's algorithm is about, is two orders of magnitude cheaper than the output and cheaper than the
+tree. The weights-only iterator of \cs{} is several times slower than the other two; we did not
+investigate why.
 
 \input{tables/local}
 
 \paragraph{Detour bound (\cref{tab:local}).} Two vertices in the middle of the $10^6$-vertex grid, 50 columns and 50
 rows apart. Without a bound, the tree covers every vertex that can reach the goal; with paths limited to 10\% above
-the shortest one, it covers only a neighborhood of the goal. LOCALTEXT
+the shortest one, it covers only a neighborhood of the goal. Without a bound the steady-state tree takes \val{local-1000/range/warm}\,ms. With the bound it
+takes \val{local-1000-ratio/range/warm}\,ms, a factor of \NumCorridorSpeedup{} less depending on the language, and
+$10^4$ paths take \val{local-1000-ratio/range/next}\,ms. In absolute terms the bound matters far more than any
+language or preprocessing choice. This is the favorable case for the bound: by \cref{sec:corridor} it searches a
+ball around the goal, which is small here because start and goal are close. The \cs{} value of
+\val{local-1000-ratio/cs/warm}\,ms is \NumRatioTreeShort$\times$ the others and is not a steady state: a query this
+short does not run long enough in 22 calls to be recompiled with optimizations in every process (the fastest
+process reached \val{local-1000-ratio/cs/warmlo}\,ms).
 
 \input{tables/build}
 
 \input{tables/yen}
 
-\paragraph{Simple paths (\cref{tab:yen}).} Two-way grids, where simple paths matter. YENTEXT
+\paragraph{Simple paths (\cref{tab:yen}).} Two-way grids, where simple paths matter. Each simple path costs many A* spur searches, so the times are much higher than for walks:
+\val{yen-200-k100/range/next}\,ms for 99 further paths and \val{yen-200-k1000/range/next:s}\,s for 999 on the
+$4\cdot 10^4$-vertex grid, that is 5--10\,ms per path where a walk costs microseconds, in line with the bounds of
+\cref{tab:complexity}. \cs{} and Rust are equally fast here; Go is slower by about 40\% and allocates
+\val{yen-200-k1000/go/alloc}\,MB for $k=1000$ where \cs{} and Rust allocate
+\val{yen-200-k1000/cs/alloc} and \val{yen-200-k1000/rust/alloc}\,MB. A likely reason is that its trie and its
+duplicate check use maps keyed by strings built from the edge lists; we did not verify this by profiling. With a
+detour bound on the $10^6$-vertex graph, 100 simple paths take \val{yen-local-1000-k100/range/next}\,ms.
 
 \input{tables/ch}
 
-\paragraph{Arc flags and contraction hierarchy (\cref{tab:ch}).} CHTEXT
+\paragraph{Arc flags and contraction hierarchy (\cref{tab:ch}).} The two-way grid with $4\cdot10^4$ vertices allows a direct comparison. Arc flags need
+\val{arcflags-4-200-two-way/range/arcflags:s}\,s of preprocessing with 4 regions and
+\val{arcflags-16-200-two-way/range/arcflags:s}\,s with 16 regions (built-in partition), and make the tree
+\NumArcFlagsGainFour\% and \NumArcFlagsGainSixteen\% faster. As expected from \cref{sec:arcflags}, the gain is
+small, at the edge of what the measurement can resolve, and bought with a preprocessing time of more than a thousand
+queries. The contraction hierarchy is cheaper to build (\val{ch-200-two-way/range/contraction:s}\,s) and more
+effective: PHAST computes the tree \NumPhastSpeedupSmall$\times$ faster than Dijkstra's algorithm. On the
+$10^6$-vertex grid the contraction takes \val{ch-1000/range/contraction:s}\,s and creates
+\val{ch-1000/rust/shortcuts} shortcuts, about 1.5 per original edge; PHAST then needs
+\val{ch-1000/range/warm}\,ms instead of \val{eppstein-1000/range/warm}\,ms (\NumPhastSpeedupBig$\times$), so the
+preprocessing is amortized after \NumChBreakEven{} tree computations. Go and Rust produce exactly the same number
+of shortcuts, because their priority queues break ties identically; \cs{} differs by less than 0.1\%. The speed-up
+is well below the factor of more than ten that PHAST achieves on road networks~\cite{delling2013phast}. There are
+three reasons: grids have no hierarchy, so $m^+$ is large; our sweep is single-threaded and does not use SIMD; and
+our times include rebuilding the tree from the original edges. Whether the technique pays off for $k$ shortest
+paths on road networks is therefore still open (\cref{sec:limitations}).
 
 \input{tables/baseline}
 
@@ -651,7 +697,66 @@ not a tuning effect; it was measured once, in one process.
 
 \section{Discussion: garbage collection and language}\label{sec:discussion}
 \input{tables/runtime}
-DISCUSSIONTEXT
+
+\Cref{tab:runtime} repeats three scenarios with different runtime settings.
+
+\paragraph{JIT warm-up is the largest language effect, and a measurement trap.} With default settings, .NET first
+compiles methods quickly without optimization and recompiles them with optimizations after they have been called
+often or have looped long enough. The second query of a process therefore runs partly unoptimized code: on the
+$200^2$ grid it takes \val{rt/eppstein-200/cs/default/second}\,ms in \cs, against
+\val{rt/eppstein-200/cs/default/warm}\,ms in steady state and \val{rt/eppstein-200/cs/no-tiered-JIT/second}\,ms
+when tiered compilation is disabled. Across all scenarios the second query of \cs{} is up to
+\NumCsSecondOverSteadyMax$\times$ slower than its steady state, while Go and Rust, which are compiled ahead of time,
+show no such difference. Comparing the languages on the second query gives gaps of up to
+\NumMaxRatioSecond$\times$; in steady state the largest gap is \NumMaxRatioTreeLong$\times$ over all queries that
+take at least 1\,ms. The first version of this paper reported the second query as ``the tree'' and concluded that
+Rust was the fastest in most scenarios; with steady-state times \cs{} is the fastest or tied on most trees
+computed with Dijkstra's algorithm. Both
+views are legitimate, for different users: a command-line tool that answers one query lives in the first regime, a
+service in the second. The same effect appears in the time for the next paths on short runs (\cs{} needs
+\val{rt/eppstein-200/cs/default/next}\,ms with and \val{rt/eppstein-200/cs/no-tiered-JIT/next}\,ms without tiered
+compilation on the small grid) and in the sub-millisecond query of \cref{tab:local}.
+
+\paragraph{Garbage collection costs a few percent.} Enumerating $10^5$ paths allocates about 840\,MB in all three
+languages (\cref{tab:enumeration}), almost all of it for the returned paths. Rust frees each path when the caller
+drops it. .NET runs \val{eppstein-1000-k100k/cs/gc} collections that pause the program for
+\val{eppstein-1000-k100k/cs/pause}\,ms in total, \NumGcShareCs\% of the enumeration time; for Yen's algorithm the
+share is also \NumGcShareCsYen\%. Go runs \val{eppstein-1000-k100k/go/gc} collections with
+\val{eppstein-1000-k100k/go/pause}\,ms of pauses; its collector works concurrently on other cores, so the pause
+understates its CPU cost but not its effect on the elapsed time of a single-threaded program on a four-core
+machine. The collections are cheap because the garbage is short-lived and the live data (the graph and the heaps of
+the query) is small and changes little; the cost of a tracing collector grows with the live data, not with the
+garbage. Two interventions confirm this. Turning Go's collector off (\texttt{GOGC=off}) does not make the
+enumeration faster (\val{rt/eppstein-1000-k100k/go/GOGC=off/next} against
+\val{rt/eppstein-1000-k100k/go/default/next}\,ms) and raises the peak resident memory from
+\val{rt/eppstein-1000-k100k/go/default/rss} to \val{rt/eppstein-1000-k100k/go/GOGC=off/rss}\,MB; the memory that
+is no longer reused must be obtained fresh from the operating system, which costs as much as collecting it did. A
+256\,MB budget for the youngest generation halves the number of .NET collections without changing the time. As
+an upper bound for everything that distinguishes the languages in this workload, including memory management, Rust
+enumerates \NumRustEnumAdvantage\% faster than the other two, which is below the dispersion of our measurements.
+
+\paragraph{What the collectors cost is memory.} The live heap of the $10^6$-vertex graph with one query is similar,
+\val{eppstein-1000/cs/mem}\,MB (\cs), \val{eppstein-1000/go/mem}\,MB (Go) and \val{eppstein-1000/rust/mem}\,MB
+(Rust; \cs{} and Go share the caller's label strings, which are therefore not counted). The peak resident memory of
+the whole process is \val{eppstein-1000/cs/rss}, \val{eppstein-1000/go/rss} and \val{eppstein-1000/rust/rss}\,MB
+(\cref{tab:build}): the garbage-collected runtimes need \NumRssRatio$\times$ the memory of the Rust process for the
+same work. This is the trade-off described by Hertz and Berger~\cite{hertz2005}: collectors match explicit memory
+management in speed when they are given more memory.
+
+\paragraph{What remains is compilers and libraries.} Apart from warm-up, the differences are small and without a
+clear order. Rust builds the graph fastest (\val{eppstein-1000/rust/build}\,ms by index against
+\val{eppstein-1000/cs/build} and \val{eppstein-1000/go/build}\,ms). In the search loops of Dijkstra's algorithm and
+A*, all three do the same array accesses with bounds checks; Go is the slowest there by 20--30\%, which is
+about the size of the dispersion. Library choices
+matter at this level: the 4-ary heap of .NET's \texttt{PriorityQueue} against our binary heaps in Go and Rust, and
+the hash tables behind the trie and the duplicate check of Yen's algorithm. These are properties of the three
+implementations, not of the languages (\cref{sec:limitations}).
+
+\paragraph{Engineering effort.} The Rust port was the third implementation and was generated by Claude from the Go
+version. Two Rust-specific properties stood out. The borrow checker turned the ``graph changed during iteration''
+error of \cs{} and Go into a compile-time error, at the price of a slightly less convenient iterator. And the most
+natural Rust structure for persistent heaps, \texttt{Rc} pointers, was replaced by index-based arenas, which are
+both faster and simpler to reason about than reference counting.
 
 \section{AI-assisted development}\label{sec:ai}
 
@@ -702,8 +807,9 @@ critically, as a referee would. The review found errors of a different kind than
         Relevant related work (K*, near-shortest paths, Feng, Hershberger et al.) was missing, which made the
         detour bound and the A* spur searches look more original than they are.
   \item \emph{Claims without data.} The text stated a 20\% gain for arc flags, a ``3--10$\times$'' gain for PHAST
-        and that writing out paths dominates the enumeration; none of these had a measurement in the paper. The
-        first two were not confirmed as stated (\cref{tab:ch}); the third was (\cref{tab:enumeration}).
+        and that writing out paths dominates the enumeration; none of these had a measurement in the paper.
+        Measured, the first and the third hold (\cref{tab:ch,tab:enumeration}); the second does not: the gain is
+        \NumPhastSpeedupSmall$\times$ and \NumPhastSpeedupBig$\times$.
   \item \emph{A confounded headline result.} The main table reported the second query of each process as ``the
         tree'' and showed \cs{} 3--4$\times$ slower than Rust on a small grid. The text explained this as JIT
         warm-up, but the table and the abstract's ``Rust is the fastest in most scenarios'' still rested on it. With
@@ -755,16 +861,17 @@ repository history and the data files are the primary evidence.
 A small 2010 prototype became a library that combines Eppstein's enumeration, a detour bound, Yen--Lawler with
 exact A*, arc flags and PHAST on a contraction hierarchy, in three languages with identical results. On the grids
 we measured, algorithmic choices changed the running time by orders of magnitude, while the three languages stayed
-within a factor of \NumMaxRatioTreeAll{} of each other in steady state once the data layout avoided allocation in
-the search loops; warm-up of the JIT-compiled runtime was a larger effect than garbage collection. Promising next
+within a factor of \NumMaxRatioTreeLong{} of each other in steady state once the data layout avoided allocation in
+the search loops; warm-up of the JIT-compiled runtime was a larger effect than garbage collection, whose cost
+showed in memory rather than in time. Promising next
 steps are experiments on real road networks, a bidirectional or K*-style construction that replaces the ball of
 the detour bound by the exact region, and the sidetrack-based simple-path algorithms~\cite{kurz2016,alzoobi2023}
 combined with (R)PHAST or CCH for the repeated tree computations. The code, the data and the scripts that produced
 every measurement in this paper are available in the repository~\cite{repo}.
 
 \section*{Acknowledgments}
-The author thanks the following people for verbal discussions: henrixapp~\cite{henrixapp}, and Juergen
-Guentherodt~\cite{guentherodt}, who also contributed ideas for the interface, based on a Delphi implementation.
+The author thanks the following people for verbal discussions: Dr.~Henrik Reinstädtler~\cite{reinstaedtler}, and Jürgen
+Güntherodt~\cite{guentherodt}, who also contributed ideas for the interface, based on a Delphi implementation.
 
 \bibliographystyle{plain}
 \bibliography{references}
