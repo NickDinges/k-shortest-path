@@ -148,6 +148,15 @@ asks for $k$ walks from $s$ to $t$ of smallest weight, in order of weight; the \
 problem} asks the same for simple paths. If a graph has a cycle that can be reached from $s$ and from which $t$ can
 be reached, it has infinitely many walks from $s$ to $t$ but only finitely many simple paths.
 
+\paragraph{Notation for running times.} We state how the cost of each algorithm grows with the input, in the usual
+$O$-notation: a running time is $O(f)$ if it is at most a constant times $f$ for all large enough inputs. Constant
+factors and lower-order terms are ignored, so the notation describes scaling, not speed on a particular machine;
+the experiments in \cref{sec:experiments} complement it. Throughout, $n$ is the number of vertices, $m$ the number
+of edges (we assume that $m$ is at most polynomial in $n$, so $\log m=O(\log n)$), $k$ the number of
+requested paths, $\deg(v)$ the number of edges leaving $v$, and $\ell$ the largest number of edges of a path that is
+output. All bounds are for the worst case unless we say otherwise. \Cref{tab:complexity} at the end of this section
+collects them.
+
 \subsection{Dijkstra's algorithm and the shortest-path tree}\label{sec:dijkstra}
 All algorithms below start from the distances of all vertices \emph{to the goal}: $d(v)=d(v,t)$.
 Dijkstra's algorithm~\cite{dijkstra1959} computes them. It keeps a tentative distance for every vertex, initially
@@ -156,7 +165,10 @@ repeatedly removes the vertex $v$ with the smallest tentative distance, which is
 \emph{relaxes} every edge $(u,v)$ entering $v$: if $w(u,v)+d(v)$ is smaller than the tentative distance of $u$, it
 becomes the new one, and $(u,v)$ is remembered as the \emph{tree edge} of $u$. Because weights are not negative, a
 settled distance can never be improved later. Since the search starts at $t$ and follows edges backwards, we call it
-a \emph{backward} search. With a binary heap as priority queue it takes $O((n+m)\log n)$ time.
+a \emph{backward} search. Every vertex is removed from the queue once and every edge is relaxed once. With a binary
+heap as priority queue, each queue operation costs $O(\log n)$, so the algorithm takes $O((n+m)\log n)$ time and
+$O(n+m)$ space; this is what the library uses. With a Fibonacci heap the bound improves to $O(m+n\log n)$, which is
+the figure usually quoted in the literature, but binary heaps are faster in practice.
 
 The tree edges form the \emph{shortest-path tree} $T$: every vertex that can reach $t$ has exactly one tree edge,
 to a vertex we call $\mathrm{next}(v)$, and following tree edges from any vertex leads to $t$ along a shortest path.
@@ -250,10 +262,13 @@ once: its last sidetrack is one node of the heap that belongs to the sequence be
 way down from the root of that heap to this node. In the example, the candidate $(a,b)$, the root of $H(s)$,
 produces $(s,b)$ by replacement and $(a,b),(b,t)$ by appending the root of $H(b)$, the heap at the head of
 $(a,b)$. Each output costs one removal and
-at most three insertions, so producing the $k$ lightest sequences takes $O(k\log k)$ time after the tree and the
-heaps exist. The graph whose vertices are the heap nodes and whose edges are these successor relations is
-Eppstein's \emph{path graph}; with all heaps built in advance in a refined way, his algorithm takes
-$O(m+n\log n+k\log k)$ time in total~\cite{eppstein1998}.
+at most three insertions, so after $k$ outputs the queue holds at most $3k$ candidates, and producing the $k$
+lightest sequences takes $O(k\log k)$ time and $O(k)$ space once the tree and the heaps exist. The graph whose
+vertices are the heap nodes and whose edges are these successor relations is Eppstein's \emph{path graph}. With all
+heaps built in advance in a refined way, his algorithm takes $O(m+n\log n+k\log k)$ time in
+total~\cite{eppstein1998}: $O(m+n\log n)$ for the tree and the heaps, $O(k\log k)$ for the enumeration in order.
+This counts each path as its sidetrack sequence (an \emph{implicit} representation); writing a path out as a list
+of edges costs additional time proportional to its length, $O(k\ell)$ in total.
 
 \paragraph{In the library: lazy heaps with leftist merging.}
 Building the heaps of all vertices in advance is wasteful when only a few paths are requested. Jiménez and
@@ -274,7 +289,17 @@ result shares all untouched nodes with them. Eppstein keeps the sidetracks of ea
 own and inserts only its root into a balanced heap along the tree path. We simplify this: the sidetracks leaving
 $v$ are sorted by delta and linked into a chain through their left children (a valid leftist heap whose rightmost
 path has length one), and this chain is merged into $H(\mathrm{next}(v))$. The merge copies $O(\log m)$ nodes, so
-$H(v)$ costs $O(\deg(v)\log\deg(v)+\log m)$ time and $O(\log m)$ additional nodes.
+$H(v)$ costs $O(\deg(v)\log\deg(v)+\log m)$ time and, beyond one node per sidetrack, $O(\log m)$ additional nodes.
+
+\emph{Complexity of our variant.} Even if the enumeration eventually needs the heap of every vertex, all heaps
+together cost $O(m\log n)$ time for sorting and $O(n\log n)$ for merging, and $O(m+n\log n)$ space. With the binary
+heap in Dijkstra's algorithm the whole query is therefore
+\[O\bigl((n+m)\log n+k\log k\bigr)\text{ time and }O(m+n\log n+k)\text{ space}\]
+for $k$ paths in implicit form, plus $O(k\ell)$ time to write them out. This is a factor of at most $\log n$ above
+Eppstein's bound in the first term and equal in the second. Laziness does not improve the worst case but the
+typical one: the first path needs only the heaps of the $L$ vertices on the tree path from $s$ to $t$, at a cost of
+$O(L\log n)$ plus the sorting of their sidetracks, and each further path needs at most the heaps on one further
+piece of tree path.
 
 A candidate is stored as a pointer to its parent candidate and one heap node, so creating one costs $O(1)$, and its
 weight is the weight of the sequence it extends plus one delta. To output a path as a list
@@ -300,6 +325,11 @@ helps when $s$ and $t$ are close relative to the size of the graph, and not at a
 with the bound the number of admissible paths is finite even with cycles, provided that no cycle of weight zero
 lies on an admissible walk; a query can then be iterated to its end.
 
+\emph{Complexity.} The bound does not change the worst case, since the ball may be the whole graph. It replaces
+$n$ and $m$ in all bounds by the numbers $n_\Delta$ and $m_\Delta$ of vertices and edges within distance
+$d(s)+\Delta$ of $t$: the tree costs $O((n_\Delta+m_\Delta)\log n_\Delta)$. For a query between nearby vertices this
+makes the cost independent of the size of the graph, which is the effect measured in \cref{tab:local}.
+
 \subsection{Simple paths: Yen's algorithm with Lawler's rule and A*}\label{sec:yen}
 In networks with two-way edges most of the shortest walks are the shortest path plus a small loop (in
 \cref{fig:example}, walks 2 and 6), not real alternatives. With \texttt{SimplePathsOnly}, the library returns
@@ -320,14 +350,17 @@ Root plus spur is the best simple path that shares exactly this root with $P$ an
 a \emph{candidate}. The next path to output is the lightest candidate found so far, kept in a priority queue.
 The algorithm is correct because the next simple path, whatever it is, shares some root with a found path and
 then leaves all found paths with that root, so it is the best path of one of the restricted problems that have been
-solved. Each output path causes up to $n$ shortest-path computations, which gives $O(kn(m+n\log n))$ time in the
-worst case.
+solved. Each output path has at most $\ell\le n-1$ edges and therefore causes at most $\ell$ shortest-path
+computations, which gives $O(k\ell(m+n\log n))$, or $O(kn(m+n\log n))$ in terms of the graph alone, with Fibonacci
+heaps. No algorithm with a substantially better worst-case bound is known for directed graphs. Compared with walks, the cost per
+path grows from $O(\log k)$ to about $\ell$ shortest-path computations, which is the price of simplicity.
 
 \paragraph{Lawler's rule.} Every path except $P_1$ was created as a candidate from a parent path at some position
 $j$, its \emph{deviation index}: up to $v_j$ it equals its parent. Lawler~\cite{lawler1972} observed that for
 positions $i<j$ the restricted problem is the same one that was already solved when the parent was processed: the
 root is the same, and the new path adds no removed edge there, because at $v_i$ it uses the same edge as its
-parent. Only positions $i\ge j$ need spur computations. This removes duplicate candidates and many searches.
+parent. Only positions $i\ge j$ need spur computations. This removes duplicate candidates and many searches,
+but a path may still deviate at its first vertex, so the worst-case bound is unchanged.
 
 \paragraph{A* with exact distances.} A spur is a point-to-point shortest path, for which Dijkstra's algorithm
 explores much more of the graph than necessary. A* search~\cite{hart1968} runs forward from the spur vertex and
@@ -338,13 +371,19 @@ the bound, the fewer vertices are explored. Here an excellent bound is available
 the shortest-path tree of the unrestricted graph. Removing vertices and edges can only make distances longer, so
 $d$ is a lower bound in every restricted graph, and it is consistent (\cref{sec:dijkstra}). When the tree path from
 the spur vertex survives the restrictions, the search settles only the vertices of that path; otherwise it explores
-only where the restrictions force a detour.
+only where the restrictions force a detour. In the worst case an A* search is no better than Dijkstra's algorithm,
+$O((n+m)\log n)$ with a binary heap. In the best case, a spur of $\ell'$ edges whose tree path is free costs
+$O(\ell'\,\Delta_{\max}\log n)$, where $\Delta_{\max}$ is the largest number of edges leaving a vertex: only the
+vertices of the spur are settled, and only their edges are relaxed.
 
 \paragraph{In the library.} The found paths are stored in a trie (a tree in which each path from the root spells
 the edge sequence of a prefix); the edges to remove at a spur vertex are the children of the root's trie node. The
 tree to $t$ is computed once per query, as for Eppstein. Spurs of a path are generated lazily when the next path
 is requested, so asking for one path costs no spur search. With a detour bound, a spur search stops as soon as the
-smallest $g+h$ in its queue exceeds what an admissible path may still cost. Using the reverse tree to guide or avoid
+smallest $g+h$ in its queue exceeds what an admissible path may still cost. With binary heaps the worst-case
+time of a query is $O(k\ell(n+m)\log n)$. The space is $O(n+m)$ for the graph and the search plus the candidates:
+up to $\ell$ per output path, each stored as a full edge list, so $O(k\ell^2)$ in the worst case; this, not time,
+can become the limit for long paths and large $k$. Using the reverse tree to guide or avoid
 spur searches is known~\cite{feng2014,kurz2016}; we do not yet skip the search when the tree path itself is a
 valid spur, which those algorithms do.
 
@@ -359,15 +398,19 @@ The bits are computed as follows. An edge inside $R$ gets the bit for $R$. A sho
 outside must pass through a \emph{boundary vertex} of $R$, a vertex of $R$ with an incoming edge from another
 region, and up to that vertex it is a shortest path to the boundary vertex. So for every boundary vertex $b$ of $R$,
 one backward Dijkstra from $b$ computes the distances to $b$, and every edge that is tight for these distances
-gets the bit for $R$. The preprocessing costs one Dijkstra run per boundary vertex, which is why partitions with
-few boundary vertices matter.
+gets the bit for $R$. With $r$ regions and $b$ boundary vertices in total, the preprocessing costs one Dijkstra run
+per boundary vertex, $O(b\,(n+m)\log n)$ time, which is why partitions with few boundary vertices matter, and the
+flags need $O(mr)$ bits. In a grid-like graph cut into $r$ regions, $b$ grows like $\sqrt{rn}$, so the
+preprocessing is clearly superlinear; it pays off only over many queries.
 
 \paragraph{In the library.} The partition comes from chunks of a breadth-first order (built in), from a string, or
 from an external partitioner such as Mt-KaHyPar~\cite{mtkahypar}, for which the library writes the METIS input
 format. The backward Dijkstra of a query relaxes only edges flagged for the goal's region. Every vertex still gets
 its correct distance, because its shortest path to $t$ consists of flagged edges. But since Eppstein needs the
 distance of \emph{every} vertex that can reach the goal, arc flags cannot skip vertices here, as they do in a
-point-to-point query; they only skip edge relaxations, so the gain is small by construction (\cref{tab:ch}). The
+point-to-point query; they only skip edge relaxations. The query remains $O((n+m_R)\log n)$, where $m_R\le m$ is
+the number of edges flagged for the goal's region: the term for the vertices is untouched, so the gain is small by
+construction (\cref{tab:ch}). The
 documentation recommends the detour bound first.
 
 \subsection{Contraction hierarchy and PHAST}\label{sec:ch}
@@ -381,6 +424,12 @@ $v$. It may be cut off after a fixed number of settled vertices; if it then has 
 added anyway, which costs space but never correctness. The order of contraction defines the \emph{rank} of each
 vertex. A good order contracts unimportant vertices first and keeps the number of shortcuts small; the usual
 heuristic picks the vertex with the smallest \emph{edge difference} (shortcuts added minus edges removed) next.
+
+Contraction hierarchies are a heuristic in the sense of running time: the results are exact, but no useful
+worst-case bound holds for general graphs. Contracting a vertex with $a$ incoming and $c$ outgoing edges runs $a$
+witness searches and adds up to $ac$ shortcuts, and in dense or hierarchy-free graphs the number of shortcuts can
+grow to $O(n^2)$. On road networks, which have a natural hierarchy of roads, the number of shortcuts stays close
+to $m$ in practice~\cite{geisberger2008}. We write $m^+$ for the number of edges of the graph with shortcuts.
 
 Let $G^+$ be the original graph plus all shortcuts. Call an edge \emph{upward} if it leads to a vertex of higher
 rank and \emph{downward} otherwise. The construction guarantees that for any two vertices $u$ and $t$ with a path
@@ -400,9 +449,11 @@ computes them from the hierarchy in two phases.
 \end{enumerate}
 After the sweep every $d(u)$ is correct, by induction over the rank: the shortest up--down path from $u$ is either
 purely downward, and was found in phase 1, or it starts with an upward edge $(u,x)$ and continues with a shortest
-up--down path from $x$, whose distance is already final because $x$ has a higher rank and was processed earlier. The
-sweep needs no priority queue and reads memory in a fixed order, which is why it is much faster than Dijkstra's
-algorithm on graphs with a good hierarchy. RPHAST~\cite{delling2011rphast} restricts the sweep to the vertices that
+up--down path from $x$, whose distance is already final because $x$ has a higher rank and was processed earlier. Phase 1 costs $O(q\log q)$ for a search space of $q$ vertices and edges, and the sweep $O(n+m^+)$: every vertex
+and every upward edge is looked at exactly once. PHAST thus replaces the $O((n+m)\log n)$ of Dijkstra's algorithm
+by a bound that is linear in the size of the hierarchy. Asymptotically the gain is only the logarithmic factor, and
+only if $m^+$ is not much larger than $m$. The practical gain is larger, because the sweep needs no priority queue
+and reads memory in a fixed order. RPHAST~\cite{delling2011rphast} restricts the sweep to the vertices that
 matter for a given set of targets, and customizable contraction hierarchies~\cite{dibbelt2016} separate an order
 that depends only on the graph's structure from a fast update for new weights.
 
@@ -412,11 +463,52 @@ the contraction evenly; witness searches have a settled-vertex limit, and of par
 kept. Vertices are stored in sweep order. Eppstein also needs the tree, not only the distances. Unpacking shortcuts
 is unnecessary: we rebuild the tree from the \emph{original} edges that are tight, breadth-first from $t$. Choosing an
 arbitrary tight edge per vertex would be wrong if the graph has cycles of weight zero, because the chosen edges
-could close such a cycle; the breadth-first order prevents this. This pass over all edges is part of the PHAST
-times we report. With a detour bound the bounded Dijkstra usually visits fewer vertices than PHAST and is used
+could close such a cycle; the breadth-first order prevents this. This pass costs $O(n+m)$, so a tree query with
+the hierarchy takes $O(q\log q+n+m+m^+)$ time; it is part of the PHAST times we report. The hierarchy needs
+$O(n+m^+)$ space. With a detour bound the bounded Dijkstra usually visits fewer vertices than PHAST and is used
 instead. For Yen--Lawler the hierarchy accelerates only the one initial tree, not the spur searches. To our
 knowledge, the combination of Eppstein's enumeration with PHAST has not been described before; a point-to-point CH
 query would not be enough for it.
+
+\subsection{Summary of the bounds}
+
+\begin{table}[t]
+\centering
+\caption{Worst-case bounds of the algorithms as implemented (binary heaps). $n$ vertices, $m$ edges, $k$ paths,
+$\ell$ edges in the longest output path, $r$ regions, $b$ boundary vertices, $m_R$ edges flagged for the goal's
+region, $m^+$ edges including shortcuts, $q$ size of the upward search space, $n_\Delta,m_\Delta$ vertices and
+edges within the detour bound. Writing out the paths adds $O(k\ell)$ time everywhere.}
+\label{tab:complexity}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+step & preprocessing time & query time & space \\
+\midrule
+Tree: Dijkstra & -- & $O((n+m)\log n)$ & $O(n+m)$ \\
+\quad with detour bound & -- & $O((n_\Delta+m_\Delta)\log n_\Delta)$ & $O(n+m)$ \\
+\quad with arc flags & $O(b\,(n+m)\log n)$ & $O((n+m_R)\log n)$ & $O(n+mr)$ \\
+\quad with CH and PHAST & no useful bound & $O(q\log q+n+m+m^+)$ & $O(n+m^+)$ \\
+\midrule
+Walks: Eppstein (original) & -- & $O(m+n\log n+k\log k)$ & $O(m+n\log n+k)$ \\
+Walks: lazy leftist heaps (ours) & -- & $O((n+m)\log n+k\log k)$ & $O(m+n\log n+k)$ \\
+\quad first path only & -- & tree $+\;O(L\log n+\sum_{v}\deg(v)\log\deg(v))$ & \\
+Simple paths: Yen--Lawler, A* & -- & $O(k\ell\,(n+m)\log n)$ & $O(n+m+k\ell^2)$ \\
+2010 prototype (acyclic graphs) & -- & at least the number of all walks & all walks \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:complexity} collects the bounds. Three observations follow from them without any measurement. First, the
+tree dominates a query for walks unless $k$ is very large: each further walk costs $O(\log k)$ plus its output,
+while the tree costs $O((n+m)\log n)$. Everything that makes the tree cheaper, above all the detour bound, which
+shrinks $n$ and $m$ themselves, pays off directly, and arc flags, which leave the term $n\log n$ untouched, cannot
+help much. Second, simple paths are in a different class: every path costs up to $\ell$ searches of the size of a
+tree computation, so speeding up the one initial tree is irrelevant for them, and the A* potential, which shrinks
+each search, is the important lever. Third, the 2010 prototype is not a slow implementation of the same algorithm
+but a different one: it enumerates every walk before returning the first, and the number of walks grows
+exponentially with the size of the graph (in an acyclic $g\times g$ grid there are $\binom{2(g-1)}{g-1}$ from corner
+to corner). In the row for the first path, $L$ is the number of vertices on the tree path from $s$ to $t$ and the
+sum runs over these vertices.
 
 \subsection{Data layout and exactness}
 Vertices and edges are stored in flat arrays (structure of arrays): tail, head, weight and group per edge, and
@@ -573,7 +665,8 @@ author's requests were short and informal, usually one sentence, and never a spe
 
 \subsection{What the human contributed}
 Three kinds of input shaped the result. \emph{The old algorithm} fixed the interface (labels, groups,
-\texttt{FindShortestPath}/\texttt{FindNextShortestPath}) and the domain; much of the later work kept that interface
+\texttt{FindShortestPath}/\texttt{FindNextShortestPath}), which goes back to ideas from a Delphi
+implementation~\cite{guentherodt}, and the domain; much of the later work kept that interface
 or broke it only when the author allowed it. \emph{Open questions} (what would improve the project most, how to make
 it much faster, what is missing for a high-quality library) delegated the search for improvements to Claude, while
 the author kept the decisions by choosing among the proposed items. \emph{Expert ideas} (arc flags with a real
@@ -668,6 +761,10 @@ steps are experiments on real road networks, a bidirectional or K*-style constru
 the detour bound by the exact region, and the sidetrack-based simple-path algorithms~\cite{kurz2016,alzoobi2023}
 combined with (R)PHAST or CCH for the repeated tree computations. The code, the data and the scripts that produced
 every measurement in this paper are available in the repository~\cite{repo}.
+
+\section*{Acknowledgments}
+The author thanks the following people for verbal discussions: henrixapp~\cite{henrixapp}, and Juergen
+Guentherodt~\cite{guentherodt}, who also contributed ideas for the interface, based on a Delphi implementation.
 
 \bibliographystyle{plain}
 \bibliography{references}

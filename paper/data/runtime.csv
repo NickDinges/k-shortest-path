@@ -1,19 +1,8 @@
-scenario,language,setting,first_ms,repeated_ms,next_ms,memory_mb
-eppstein-200,C#,default,39.0,27.7,76.2,6.5
-eppstein-200,C#,gen0 256 MB,39.9,28.5,78.9,6.5
-eppstein-200,C#,no tiered JIT,22.1,6.4,42.9,4.4
-eppstein-200,Go,default,9.8,9.0,43.9,3.2
-eppstein-200,Go,GOGC=off,10.0,8.0,42.7,3.2
-eppstein-200,Rust,default,7.8,6.6,34.8,6.0
-eppstein-1000-k100k,C#,default,451.7,254.9,3441.2,117.3
-eppstein-1000-k100k,C#,gen0 256 MB,387.0,257.3,3489.3,117.3
-eppstein-1000-k100k,C#,no tiered JIT,309.1,247.5,3331.9,83.7
-eppstein-1000-k100k,Go,default,350.9,323.9,3468.5,94.0
-eppstein-1000-k100k,Go,GOGC=off,363.2,317.5,3450.6,94.0
-eppstein-1000-k100k,Rust,default,283.0,259.0,3091.7,112.2
-yen-200-k1000,C#,default,51.2,38.1,5484.6,8.8
-yen-200-k1000,C#,gen0 256 MB,50.9,38.4,5427.7,8.8
-yen-200-k1000,C#,no tiered JIT,22.9,8.6,5331.2,8.3
-yen-200-k1000,Go,default,13.2,10.9,7581.2,4.3
-yen-200-k1000,Go,GOGC=off,12.0,12.4,7645.9,4.3
-yen-200-k1000,Rust,default,11.5,9.4,5868.9,10.3
+scenario,language,setting,first_ms,repeated_ms,next_ms,memory_mb,warm_median_ms,gc_count,gc_pause_ms,alloc_mb,peak_rss_mb
+eppstein-200,C#,default,41.0,28.8,85.7,4.4,5.29,0.0,0.0,20.0,72.941
+eppstein-200,C#,gen0 256 MB,46.2,28.1,91.5,4.4,7.533,0.0,0.0,20.0,72.715
+eppstein-200,C#,non-concurrent GC,39.7,27.7,87.3,4.4,7.081,0.0,0.0,20.0,72.5
+eppstein-200,C#,no tiered JIT,23.8,7.6,48.2,4.4,6.412,0.0,0.0,20.0,67.41
+eppstein-200,Go,default,10.7,11.0,46.7,3.2,8.78,3.0,0.31,21.2,19.0
+eppstein-200,Go,GOGC=off,10.7,9.1,43.7,3.2,8.209,0.0,0.0,21.2,33.125
+eppstein-200,Rust,default,8.0,6.6,36.1,6.0,6.809,0.0,0.0,22.0,14.859
